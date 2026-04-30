@@ -166,21 +166,21 @@ const Customer = () => {
           </button>
           
           <button 
-            onClick={() => handleNavigate('alerts', null)} 
+            onClick={() => handleNavigate('alerts', '/alerts')} 
             className={`nav-item ${activePage === 'alerts' ? 'nav-item-active' : ''}`}
           >
             {sidebarOpen ? 'ALERTS' : 'AL'}
           </button>
           
           <button 
-            onClick={() => handleNavigate('network', null)} 
+            onClick={() => handleNavigate('network', '/network')} 
             className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}
           >
             {sidebarOpen ? 'NETWORK' : 'NW'}
           </button>
           
           <button 
-            onClick={() => handleNavigate('reports', null)} 
+            onClick={() => handleNavigate('reports', '/reports')} 
             className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}
           >
             {sidebarOpen ? 'REPORTS' : 'RP'}
