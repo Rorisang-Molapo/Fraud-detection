@@ -166,7 +166,7 @@ const Network = () => {
           </button>
           
           <button 
-            onClick={() => handleNavigate('reports', null)} 
+            onClick={() => handleNavigate('reports', '/reports')} 
             className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}
           >
             {sidebarOpen ? 'REPORTS' : 'RP'}
