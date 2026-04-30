@@ -170,6 +170,7 @@ app.get('/api/dashboard/risk-distribution', requireAuth, async (req, res) => {
         await session.close();
     }
 });
+
 // Get all customers
 app.get('/api/customers', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -361,7 +362,7 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
         // Get circular transaction patterns (potential money laundering)
         const circularResult = await session.run(`
             MATCH (a1:Account)-[r1:TRANSFERRED_TO]->(a2:Account)-[r2:TRANSFERRED_TO]->(a1)
-            WHERE r1.timestamp > datetime().epochMillis - 86400000
+            WHERE r1.timestamp > datetime() - duration({days: 1})
             MATCH (a1)<-[:OWNS]-(c1:Customer), (a2)<-[:OWNS]-(c2:Customer)
             RETURN c1.name AS customer1, c2.name AS customer2, r1.amount AS amount1, r2.amount AS amount2
             LIMIT 5
@@ -372,7 +373,7 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
                 id: 'CIRCULAR_' + Date.now() + Math.random(),
                 type: 'CIRCULAR_TRANSACTION',
                 severity: 'CRITICAL',
-                message: `Suspicious circular transfer pattern detected: ${record.get('customer1')} → ${record.get('customer2')} → ${record.get('customer1')} (Potential money laundering)`,
+                message: `Suspicious circular transfer pattern detected: ${record.get('customer1')} ↔ ${record.get('customer2')} (Potential money laundering)`,
                 customers: [record.get('customer1'), record.get('customer2')],
                 timestamp: new Date().toISOString(),
                 amounts: [record.get('amount1').toNumber(), record.get('amount2').toNumber()]
@@ -383,7 +384,8 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
         const largeTransResult = await session.run(`
             MATCH (t:Transaction)
             WHERE t.amount > 50000
-            MATCH (a:Account {transactionId: t.transactionId})<-[:OWNS]-(c:Customer)
+            MATCH (a:Account)<-[:MADE]-(t)
+            MATCH (c:Customer)-[:OWNS]->(a)
             RETURN t.transactionId AS transactionId, t.amount AS amount, t.timestamp AS timestamp,
                    c.name AS customerName
             ORDER BY t.amount DESC
@@ -416,6 +418,92 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Fraud alerts error:', error);
         res.status(500).json({ error: 'Failed to fetch fraud alerts' });
+    } finally {
+        await session.close();
+    }
+});
+
+// Network Data - Get all nodes and edges for visualization
+app.get('/api/network/data', requireAuth, async (req, res) => {
+    const session = driver.session();
+    
+    try {
+        // Get all nodes
+        const nodesResult = await session.run(`
+            MATCH (c:Customer)
+            RETURN 'Customer' AS type, c.id AS id, c.name AS label, c.riskScore AS riskScore, 
+                   NULL AS isFlagged, NULL AS amount, c.status AS status
+            UNION ALL
+            MATCH (a:Account)
+            RETURN 'Account' AS type, toString(a.accountNumber) AS id, toString(a.accountNumber) AS label,
+                   NULL AS riskScore, a.isFlagged AS isFlagged, NULL AS amount, a.status AS status
+            UNION ALL
+            MATCH (t:Transaction)
+            RETURN 'Transaction' AS type, t.transactionId AS id, t.transactionId AS label,
+                   NULL AS riskScore, t.isFlagged AS isFlagged, t.amount AS amount, NULL AS status
+            UNION ALL
+            MATCH (d:Device)
+            RETURN 'Device' AS type, d.deviceId AS id, d.deviceId AS label,
+                   NULL AS riskScore, NULL AS isFlagged, NULL AS amount, NULL AS status
+            UNION ALL
+            MATCH (i:IPAddress)
+            RETURN 'IPAddress' AS type, i.address AS id, i.address AS label,
+                   NULL AS riskScore, i.isVPN AS isFlagged, NULL AS amount, NULL AS status
+            UNION ALL
+            MATCH (l:Location)
+            RETURN 'Location' AS type, l.city + ',' + l.country AS id, l.city + ',' + l.country AS label,
+                   NULL AS riskScore, CASE WHEN l.riskLevel = 'high' THEN true ELSE false END AS isFlagged,
+                   NULL AS amount, NULL AS status
+        `);
+        
+        const nodes = nodesResult.records.map(record => ({
+            id: record.get('id'),
+            type: record.get('type'),
+            label: record.get('label'),
+            riskScore: record.get('riskScore') ? record.get('riskScore').toNumber() : null,
+            isFlagged: record.get('isFlagged') || false,
+            amount: record.get('amount') ? record.get('amount').toNumber() : null,
+            status: record.get('status')
+        }));
+        
+        // Get all edges (relationships)
+        const edgesResult = await session.run(`
+            MATCH (source)-[r]->(target)
+            WHERE (source:Customer OR source:Account OR source:Transaction OR source:Device OR source:IPAddress OR source:Location)
+              AND (target:Customer OR target:Account OR target:Transaction OR target:Device OR target:IPAddress OR target:Location)
+            RETURN 
+                CASE 
+                    WHEN source:Customer THEN source.id
+                    WHEN source:Account THEN toString(source.accountNumber)
+                    WHEN source:Transaction THEN source.transactionId
+                    WHEN source:Device THEN source.deviceId
+                    WHEN source:IPAddress THEN source.address
+                    WHEN source:Location THEN source.city + ',' + source.country
+                END AS source,
+                CASE 
+                    WHEN target:Customer THEN target.id
+                    WHEN target:Account THEN toString(target.accountNumber)
+                    WHEN target:Transaction THEN target.transactionId
+                    WHEN target:Device THEN target.deviceId
+                    WHEN target:IPAddress THEN target.address
+                    WHEN target:Location THEN target.city + ',' + target.country
+                END AS target,
+                type(r) AS relationship,
+                r.amount AS amount
+            LIMIT 200
+        `);
+        
+        const edges = edgesResult.records.map(record => ({
+            source: record.get('source'),
+            target: record.get('target'),
+            relationship: record.get('relationship'),
+            amount: record.get('amount') ? record.get('amount').toNumber() : null
+        }));
+        
+        res.json({ nodes, edges });
+    } catch (error) {
+        console.error('Network data error:', error);
+        res.status(500).json({ error: 'Failed to fetch network data' });
     } finally {
         await session.close();
     }

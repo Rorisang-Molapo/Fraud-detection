@@ -74,11 +74,7 @@ const FraudAlerts = () => {
 
   const getTypeIcon = (type) => {
     const icons = {
-      'FLAGGED_TRANSACTION': '[!]',
-      'HIGH_RISK_CUSTOMER': '[X]',
-      'CIRCULAR_TRANSACTION': '[O]',
-      'LARGE_TRANSACTION': '[$]',
-      'UNUSUAL_PATTERN': '[~]'
+      
     };
     return icons[type] || '[•]';
   };
@@ -150,7 +146,7 @@ const FraudAlerts = () => {
   if (loading) {
     return (
       <div className="loading-container">
-        <div className="loading-text">SCANNING NETWORK FOR FRAUDULENT PATTERNS...</div>
+        <div className="loading-text">Please be patient while we load the alerts...</div>
       </div>
     );
   }
