@@ -139,14 +139,14 @@ const Dashboard = () => {
           </button>
           
           <button 
-            onClick={() => handleNavigate('network', 'network')} 
+            onClick={() => handleNavigate('network', '/network')} 
             className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}
           >
             {sidebarOpen ? 'NETWORK' : 'NW'}
           </button>
           
           <button 
-            onClick={() => handleNavigate('reports', 'reports')} 
+            onClick={() => handleNavigate('reports', '/reports')} 
             className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}
           >
             {sidebarOpen ? 'REPORTS' : 'RP'}
