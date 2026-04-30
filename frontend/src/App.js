@@ -4,6 +4,7 @@ import axios from 'axios';
 import Login from './Login';
 import Dashboard from './Dashboard';
 import Customer from './Customer';
+import Alerts from './Alerts';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -35,6 +36,7 @@ function App() {
         <Route path="/login" element={<Login onLogin={() => setIsLoggedIn(true)} />} />
         <Route path="/dashboard" element={isLoggedIn ? <Dashboard /> : <Navigate to="/login" />} />
          <Route path="/customer" element={isLoggedIn ? <Customer /> : <Navigate to="/login" />} />
+         <Route path="/alerts" element={isLoggedIn ? <Alerts /> : <Navigate to="/login" />} />
         <Route path="/" element={<Navigate to="/login" />} />
       </Routes>
     </Router>

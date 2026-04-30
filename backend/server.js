@@ -304,6 +304,123 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
     }
 });
 
+// Fraud Alerts Endpoint
+app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
+    const session = driver.session();
+    
+    try {
+        const alerts = [];
+        
+        // Get flagged transactions (High Risk)
+        const flaggedResult = await session.run(`
+            MATCH (t:Transaction {isFlagged: true})<-[:MADE]-(a:Account)<-[:OWNS]-(c:Customer)
+            RETURN t.transactionId AS transactionId, t.amount AS amount, t.timestamp AS timestamp,
+                   c.name AS customerName, c.id AS customerId, a.accountNumber AS accountNumber
+            ORDER BY t.timestamp DESC
+            LIMIT 10
+        `);
+        
+        flaggedResult.records.forEach(record => {
+            const timestamp = record.get('timestamp');
+            const timestampStr = typeof timestamp === 'object' && timestamp.toString ? timestamp.toString() : new Date().toISOString();
+            alerts.push({
+                id: 'FLAGGED_' + record.get('transactionId'),
+                type: 'FLAGGED_TRANSACTION',
+                severity: 'HIGH',
+                message: `Transaction of $${record.get('amount').toNumber().toFixed(2)} by ${record.get('customerName')} (Account: ${record.get('accountNumber')}) flagged for manual review`,
+                customer: record.get('customerName'),
+                timestamp: timestampStr,
+                amount: record.get('amount').toNumber()
+            });
+        });
+        
+        // Get high-risk customers with suspicious activity
+        const highRiskResult = await session.run(`
+            MATCH (c:Customer)
+            WHERE c.riskScore >= 70
+            OPTIONAL MATCH (c)-[:OWNS]->(a:Account)-[:MADE]->(t:Transaction)
+            WITH c, COUNT(t) as transactionCount
+            WHERE transactionCount > 20
+            RETURN c.name AS name, c.id AS id, c.riskScore AS riskScore, transactionCount
+            ORDER BY c.riskScore DESC
+            LIMIT 5
+        `);
+        
+        highRiskResult.records.forEach(record => {
+            alerts.push({
+                id: 'HIGH_RISK_' + record.get('id'),
+                type: 'HIGH_RISK_CUSTOMER',
+                severity: 'CRITICAL',
+                message: `Customer ${record.get('name')} has critical risk score (${record.get('riskScore').toNumber()}) with ${record.get('transactionCount')} transactions`,
+                customer: record.get('name'),
+                timestamp: new Date().toISOString(),
+                riskScore: record.get('riskScore').toNumber()
+            });
+        });
+        
+        // Get circular transaction patterns (potential money laundering)
+        const circularResult = await session.run(`
+            MATCH (a1:Account)-[r1:TRANSFERRED_TO]->(a2:Account)-[r2:TRANSFERRED_TO]->(a1)
+            WHERE r1.timestamp > datetime().epochMillis - 86400000
+            MATCH (a1)<-[:OWNS]-(c1:Customer), (a2)<-[:OWNS]-(c2:Customer)
+            RETURN c1.name AS customer1, c2.name AS customer2, r1.amount AS amount1, r2.amount AS amount2
+            LIMIT 5
+        `);
+        
+        circularResult.records.forEach(record => {
+            alerts.push({
+                id: 'CIRCULAR_' + Date.now() + Math.random(),
+                type: 'CIRCULAR_TRANSACTION',
+                severity: 'CRITICAL',
+                message: `Suspicious circular transfer pattern detected: ${record.get('customer1')} → ${record.get('customer2')} → ${record.get('customer1')} (Potential money laundering)`,
+                customers: [record.get('customer1'), record.get('customer2')],
+                timestamp: new Date().toISOString(),
+                amounts: [record.get('amount1').toNumber(), record.get('amount2').toNumber()]
+            });
+        });
+        
+        // Get large transactions (potential structuring)
+        const largeTransResult = await session.run(`
+            MATCH (t:Transaction)
+            WHERE t.amount > 50000
+            MATCH (a:Account {transactionId: t.transactionId})<-[:OWNS]-(c:Customer)
+            RETURN t.transactionId AS transactionId, t.amount AS amount, t.timestamp AS timestamp,
+                   c.name AS customerName
+            ORDER BY t.amount DESC
+            LIMIT 5
+        `);
+        
+        largeTransResult.records.forEach(record => {
+            const timestamp = record.get('timestamp');
+            const timestampStr = typeof timestamp === 'object' && timestamp.toString ? timestamp.toString() : new Date().toISOString();
+            alerts.push({
+                id: 'LARGE_TRANS_' + record.get('transactionId'),
+                type: 'LARGE_TRANSACTION',
+                severity: 'MEDIUM',
+                message: `Large transaction detected: $${record.get('amount').toNumber().toFixed(2)} by ${record.get('customerName')}`,
+                customer: record.get('customerName'),
+                timestamp: timestampStr,
+                amount: record.get('amount').toNumber()
+            });
+        });
+        
+        // Sort by severity and timestamp
+        const severityOrder = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
+        alerts.sort((a, b) => {
+            const sevDiff = severityOrder[a.severity] - severityOrder[b.severity];
+            if (sevDiff !== 0) return sevDiff;
+            return new Date(b.timestamp) - new Date(a.timestamp);
+        });
+        
+        res.json(alerts);
+    } catch (error) {
+        console.error('Fraud alerts error:', error);
+        res.status(500).json({ error: 'Failed to fetch fraud alerts' });
+    } finally {
+        await session.close();
+    }
+});
+
 app.listen(5000, () => {
     console.log('Server running on port 5000');
 });

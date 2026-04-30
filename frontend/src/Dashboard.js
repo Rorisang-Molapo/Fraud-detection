@@ -132,7 +132,7 @@ const Dashboard = () => {
           </button>
           
           <button 
-            onClick={() => handleNavigate('alerts', null)} 
+            onClick={() => handleNavigate('alerts', '/alerts')} 
             className={`nav-item ${activePage === 'alerts' ? 'nav-item-active' : ''}`}
           >
             {sidebarOpen ? 'ALERTS' : 'AL'}
