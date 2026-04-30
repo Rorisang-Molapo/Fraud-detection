@@ -192,14 +192,14 @@ const FraudAlerts = () => {
           </button>
           
           <button 
-            onClick={() => handleNavigate('network', null)} 
+            onClick={() => handleNavigate('network', '/network')} 
             className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}
           >
             {sidebarOpen ? 'NETWORK' : 'NW'}
           </button>
           
           <button 
-            onClick={() => handleNavigate('reports', null)} 
+            onClick={() => handleNavigate('reports', '/reports')} 
             className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}
           >
             {sidebarOpen ? 'REPORTS' : 'RP'}
