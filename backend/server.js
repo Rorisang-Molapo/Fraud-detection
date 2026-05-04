@@ -90,7 +90,7 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
             WITH totalCustomers, COUNT(t) AS totalTransactions
             MATCH (t2:Transaction {isFlagged: true})
             WITH totalCustomers, totalTransactions, COUNT(t2) AS flaggedTransactions
-            MATCH (c2:Customer {status: 'high_risk'})
+            MATCH (c2:Customer WHERE c2.status = 'high_risk' OR c2.riskScore >= 15)
             WITH totalCustomers, totalTransactions, flaggedTransactions, COUNT(c2) AS highRiskCustomers
             OPTIONAL MATCH (:Account)-[r:TRANSFERRED_TO]->(:Account)
             WITH totalCustomers, totalTransactions, flaggedTransactions, highRiskCustomers, COALESCE(SUM(r.amount), 0) AS totalTransferAmount
@@ -122,7 +122,7 @@ app.get('/api/dashboard/high-risk-alerts', requireAuth, async (req, res) => {
     try {
         const result = await session.run(`
             MATCH (c:Customer)
-            WHERE c.riskScore >= 40
+            WHERE c.riskScore >= 15 OR c.status = 'medium_risk' OR c.status = 'high_risk'
             RETURN c.id AS id, c.name AS name, c.riskScore AS riskScore, c.status AS status
             ORDER BY c.riskScore DESC
             LIMIT 10
@@ -152,9 +152,9 @@ app.get('/api/dashboard/risk-distribution', requireAuth, async (req, res) => {
         const result = await session.run(`
             MATCH (c:Customer)
             RETURN 
-                SUM(CASE WHEN c.riskScore >= 70 THEN 1 ELSE 0 END) AS high,
-                SUM(CASE WHEN c.riskScore >= 40 AND c.riskScore < 70 THEN 1 ELSE 0 END) AS medium,
-                SUM(CASE WHEN c.riskScore < 40 THEN 1 ELSE 0 END) AS low
+                SUM(CASE WHEN c.riskScore >= 30 OR c.status = 'high_risk' THEN 1 ELSE 0 END) AS high,
+                SUM(CASE WHEN c.riskScore >= 15 AND c.riskScore < 30 OR c.status = 'medium_risk' THEN 1 ELSE 0 END) AS medium,
+                SUM(CASE WHEN c.riskScore < 15 OR c.riskScore = 0 THEN 1 ELSE 0 END) AS low
         `);
         
         const record = result.records[0];
@@ -241,7 +241,6 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
     const session = driver.session();
     
     try {
-        // Get customer details
         const customerResult = await session.run(`
             MATCH (c:Customer {id: $id})
             RETURN c.id AS id, c.name AS name, c.email AS email, c.phone AS phone, 
@@ -254,7 +253,6 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
         
         const customer = customerResult.records[0];
         
-        // Get customer's accounts
         const accountsResult = await session.run(`
             MATCH (c:Customer {id: $id})-[:OWNS]->(a:Account)
             RETURN a.accountNumber AS accountNumber, a.type AS type, a.balance AS balance, 
@@ -269,7 +267,6 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
             isFlagged: record.get('isFlagged')
         }));
         
-        // Get customer's transactions
         const transactionsResult = await session.run(`
             MATCH (c:Customer {id: $id})-[:OWNS]->(a:Account)-[:MADE]->(t:Transaction)
             RETURN t.transactionId AS transactionId, t.amount AS amount, t.type AS type, 
@@ -305,114 +302,86 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
     }
 });
 
-// Fraud Alerts Endpoint
+// Fraud Alerts Endpoint - FIXED for actual data
 app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     const session = driver.session();
     
     try {
         const alerts = [];
         
-        // Get flagged transactions (High Risk)
+        // Get flagged transactions (these exist in your data)
         const flaggedResult = await session.run(`
             MATCH (t:Transaction {isFlagged: true})<-[:MADE]-(a:Account)<-[:OWNS]-(c:Customer)
             RETURN t.transactionId AS transactionId, t.amount AS amount, t.timestamp AS timestamp,
-                   c.name AS customerName, c.id AS customerId, a.accountNumber AS accountNumber
+                   c.name AS customerName, c.id AS customerId, a.accountNumber AS accountNumber,
+                   t.flagReason AS flagReason
             ORDER BY t.timestamp DESC
-            LIMIT 10
         `);
         
         flaggedResult.records.forEach(record => {
             const timestamp = record.get('timestamp');
-            const timestampStr = typeof timestamp === 'object' && timestamp.toString ? timestamp.toString() : new Date().toISOString();
+            const timestampStr = timestamp ? timestamp.toString() : new Date().toISOString();
             alerts.push({
                 id: 'FLAGGED_' + record.get('transactionId'),
                 type: 'FLAGGED_TRANSACTION',
                 severity: 'HIGH',
-                message: `Transaction of $${record.get('amount').toNumber().toFixed(2)} by ${record.get('customerName')} (Account: ${record.get('accountNumber')}) flagged for manual review`,
+                message: `Transaction of $${record.get('amount').toNumber().toFixed(2)} by ${record.get('customerName')} flagged: ${record.get('flagReason') || 'Manual review required'}`,
                 customer: record.get('customerName'),
                 timestamp: timestampStr,
                 amount: record.get('amount').toNumber()
             });
         });
         
-        // Get high-risk customers with suspicious activity
-        const highRiskResult = await session.run(`
+        // Get customers with medium/high risk scores
+        const riskCustomerResult = await session.run(`
             MATCH (c:Customer)
-            WHERE c.riskScore >= 70
-            OPTIONAL MATCH (c)-[:OWNS]->(a:Account)-[:MADE]->(t:Transaction)
-            WITH c, COUNT(t) as transactionCount
-            WHERE transactionCount > 20
-            RETURN c.name AS name, c.id AS id, c.riskScore AS riskScore, transactionCount
+            WHERE c.riskScore >= 15 OR c.status = 'medium_risk' OR c.status = 'high_risk'
+            RETURN c.name AS name, c.id AS id, c.riskScore AS riskScore, c.status AS status
             ORDER BY c.riskScore DESC
-            LIMIT 5
         `);
         
-        highRiskResult.records.forEach(record => {
+        riskCustomerResult.records.forEach(record => {
+            const riskScore = record.get('riskScore').toNumber();
+            let severity = 'MEDIUM';
+            if (riskScore >= 30) severity = 'CRITICAL';
+            else if (riskScore >= 15) severity = 'HIGH';
+            
             alerts.push({
-                id: 'HIGH_RISK_' + record.get('id'),
+                id: 'RISK_CUST_' + record.get('id'),
                 type: 'HIGH_RISK_CUSTOMER',
-                severity: 'CRITICAL',
-                message: `Customer ${record.get('name')} has critical risk score (${record.get('riskScore').toNumber()}) with ${record.get('transactionCount')} transactions`,
+                severity: severity,
+                message: `Customer ${record.get('name')} has risk score ${riskScore} (${record.get('status')})`,
                 customer: record.get('name'),
                 timestamp: new Date().toISOString(),
-                riskScore: record.get('riskScore').toNumber()
+                riskScore: riskScore
             });
         });
         
-        // Get circular transaction patterns (potential money laundering)
-        const circularResult = await session.run(`
-            MATCH (a1:Account)-[r1:TRANSFERRED_TO]->(a2:Account)-[r2:TRANSFERRED_TO]->(a1)
-            WHERE r1.timestamp > datetime() - duration({days: 1})
-            MATCH (a1)<-[:OWNS]-(c1:Customer), (a2)<-[:OWNS]-(c2:Customer)
-            RETURN c1.name AS customer1, c2.name AS customer2, r1.amount AS amount1, r2.amount AS amount2
+        // Get money laundering paths (2+ hop transfers)
+        const pathResult = await session.run(`
+            MATCH path = (src:Account)-[:TRANSFERRED_TO*2..3]->(dst:Account)
+            WHERE src <> dst
+            RETURN src.accountNumber AS source, dst.accountNumber AS destination,
+                   [node IN nodes(path) | node.accountNumber] AS path,
+                   REDUCE(s = 0, r IN relationships(path) | s + r.amount) AS totalAmount
             LIMIT 5
         `);
         
-        circularResult.records.forEach(record => {
+        pathResult.records.forEach(record => {
             alerts.push({
-                id: 'CIRCULAR_' + Date.now() + Math.random(),
+                id: 'LAUNDERING_PATH_' + Date.now(),
                 type: 'CIRCULAR_TRANSACTION',
-                severity: 'CRITICAL',
-                message: `Suspicious circular transfer pattern detected: ${record.get('customer1')} ↔ ${record.get('customer2')} (Potential money laundering)`,
-                customers: [record.get('customer1'), record.get('customer2')],
+                severity: 'HIGH',
+                message: `Suspicious money flow detected: ${record.get('path').join(' → ')} (Total: $${record.get('totalAmount').toNumber().toFixed(2)})`,
+                customers: record.get('path'),
                 timestamp: new Date().toISOString(),
-                amounts: [record.get('amount1').toNumber(), record.get('amount2').toNumber()]
+                amount: record.get('totalAmount').toNumber()
             });
         });
         
-        // Get large transactions (potential structuring)
-        const largeTransResult = await session.run(`
-            MATCH (t:Transaction)
-            WHERE t.amount > 50000
-            MATCH (a:Account)<-[:MADE]-(t)
-            MATCH (c:Customer)-[:OWNS]->(a)
-            RETURN t.transactionId AS transactionId, t.amount AS amount, t.timestamp AS timestamp,
-                   c.name AS customerName
-            ORDER BY t.amount DESC
-            LIMIT 5
-        `);
-        
-        largeTransResult.records.forEach(record => {
-            const timestamp = record.get('timestamp');
-            const timestampStr = typeof timestamp === 'object' && timestamp.toString ? timestamp.toString() : new Date().toISOString();
-            alerts.push({
-                id: 'LARGE_TRANS_' + record.get('transactionId'),
-                type: 'LARGE_TRANSACTION',
-                severity: 'MEDIUM',
-                message: `Large transaction detected: $${record.get('amount').toNumber().toFixed(2)} by ${record.get('customerName')}`,
-                customer: record.get('customerName'),
-                timestamp: timestampStr,
-                amount: record.get('amount').toNumber()
-            });
-        });
-        
-        // Sort by severity and timestamp
+        // Sort by severity
         const severityOrder = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
-        alerts.sort((a, b) => {
-            const sevDiff = severityOrder[a.severity] - severityOrder[b.severity];
-            if (sevDiff !== 0) return sevDiff;
-            return new Date(b.timestamp) - new Date(a.timestamp);
-        });
+        alerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
         
         res.json(alerts);
     } catch (error) {
@@ -428,7 +397,6 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
     const session = driver.session();
     
     try {
-        // Get all nodes
         const nodesResult = await session.run(`
             MATCH (c:Customer)
             RETURN 'Customer' AS type, c.id AS id, c.name AS label, c.riskScore AS riskScore, 
@@ -466,7 +434,6 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
             status: record.get('status')
         }));
         
-        // Get all edges (relationships)
         const edgesResult = await session.run(`
             MATCH (source)-[r]->(target)
             WHERE (source:Customer OR source:Account OR source:Transaction OR source:Device OR source:IPAddress OR source:Location)
@@ -490,7 +457,6 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
                 END AS target,
                 type(r) AS relationship,
                 r.amount AS amount
-            LIMIT 200
         `);
         
         const edges = edgesResult.records.map(record => ({

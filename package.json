@@ -1,6 +1,9 @@
 {
   "dependencies": {
     "neo4j-driver": "^6.0.1",
-    "use-neo4j": "^0.3.13"
+    "recharts": "^3.8.1",
+    "use-neo4j": "^0.3.13",
+    "vis-data": "^8.0.3",
+    "vis-network": "^10.0.2"
   }
 }

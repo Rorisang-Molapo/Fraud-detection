@@ -72,22 +72,21 @@ const Dashboard = () => {
     setSidebarOpen(!sidebarOpen);
   };
 
+  const handleViewAllAlerts = () => {
+    navigate('/alerts');
+    setActivePage('alerts');
+  };
+
   const getRiskColor = (riskScore) => {
-    if (riskScore >= 70) return '#ef4444';
-    if (riskScore >= 40) return '#f59e0b';
+    if (riskScore >= 30) return '#ef4444';
+    if (riskScore >= 15) return '#f59e0b';
     return '#10b981';
   };
 
   const getRiskLevel = (riskScore) => {
-    if (riskScore >= 70) return 'CRITICAL';
-    if (riskScore >= 40) return 'ELEVATED';
-    return 'MODERATE';
-  };
-
-  const getRiskClass = (riskScore) => {
-    if (riskScore >= 70) return 'risk-critical';
-    if (riskScore >= 40) return 'risk-elevated';
-    return 'risk-moderate';
+    if (riskScore >= 30) return 'HIGH';
+    if (riskScore >= 15) return 'MEDIUM';
+    return 'LOW';
   };
 
   if (loading) {
@@ -239,30 +238,39 @@ const Dashboard = () => {
                 <div className="risk-item">
                   <div className="risk-label">
                     <span className="risk-color-critical"></span>
-                    <span>CRITICAL (70-100)</span>
+                    <span>HIGH (30-100)</span>
                   </div>
                   <div className="risk-bar">
-                    <div className="risk-fill" style={{ width: `${(riskDistribution.high / (riskDistribution.high + riskDistribution.medium + riskDistribution.low)) * 100 || 0}%`, backgroundColor: '#ef4444' }}></div>
+                    <div className="risk-fill" style={{ 
+                      width: `${(riskDistribution.high / (riskDistribution.high + riskDistribution.medium + riskDistribution.low)) * 100 || 0}%`, 
+                      backgroundColor: '#ef4444' 
+                    }}></div>
                   </div>
                   <span className="risk-percent">{riskDistribution.high}</span>
                 </div>
                 <div className="risk-item">
                   <div className="risk-label">
                     <span className="risk-color-elevated"></span>
-                    <span>ELEVATED (40-69)</span>
+                    <span>MEDIUM (15-29)</span>
                   </div>
                   <div className="risk-bar">
-                    <div className="risk-fill" style={{ width: `${(riskDistribution.medium / (riskDistribution.high + riskDistribution.medium + riskDistribution.low)) * 100 || 0}%`, backgroundColor: '#f59e0b' }}></div>
+                    <div className="risk-fill" style={{ 
+                      width: `${(riskDistribution.medium / (riskDistribution.high + riskDistribution.medium + riskDistribution.low)) * 100 || 0}%`, 
+                      backgroundColor: '#f59e0b' 
+                    }}></div>
                   </div>
                   <span className="risk-percent">{riskDistribution.medium}</span>
                 </div>
                 <div className="risk-item">
                   <div className="risk-label">
                     <span className="risk-color-moderate"></span>
-                    <span>MODERATE (0-39)</span>
+                    <span>LOW (0-14)</span>
                   </div>
                   <div className="risk-bar">
-                    <div className="risk-fill" style={{ width: `${(riskDistribution.low / (riskDistribution.high + riskDistribution.medium + riskDistribution.low)) * 100 || 0}%`, backgroundColor: '#10b981' }}></div>
+                    <div className="risk-fill" style={{ 
+                      width: `${(riskDistribution.low / (riskDistribution.high + riskDistribution.medium + riskDistribution.low)) * 100 || 0}%`, 
+                      backgroundColor: '#10b981' 
+                    }}></div>
                   </div>
                   <span className="risk-percent">{riskDistribution.low}</span>
                 </div>
@@ -279,7 +287,7 @@ const Dashboard = () => {
             <div className="card">
               <div className="card-header">
                 <h3 className="card-title">RECENT HIGH-RISK ALERTS</h3>
-                <span className="card-link">View all alerts →</span>
+                <span className="card-link" onClick={handleViewAllAlerts}>View all alerts →</span>
               </div>
               <div className="alerts-table">
                 <table className="data-table">
@@ -288,7 +296,6 @@ const Dashboard = () => {
                       <th>Customer ID</th>
                       <th>Risk Level</th>
                       <th>Risk Score</th>
-                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -300,14 +307,11 @@ const Dashboard = () => {
                             {getRiskLevel(alert.riskScore)}
                           </td>
                           <td>{alert.riskScore}</td>
-                          <td>
-                            <button className="investigate-button">INVESTIGATE</button>
-                          </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="4" className="no-data">No high-risk alerts</td>
+                        <td colSpan="3" className="no-data">No high-risk alerts</td>
                       </tr>
                     )}
                   </tbody>
