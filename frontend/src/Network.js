@@ -129,7 +129,7 @@ const Network = () => {
       return {
         id: node.id,
         label: node.label.length > 25 ? node.label.substring(0, 22) + '...' : node.label,
-        title: `${node.type}\n${node.label}\n${node.riskScore ? 'Risk Score: ' + node.riskScore : ''}${node.amount ? 'Amount: $' + node.amount.toLocaleString() : ''}${node.isFlagged ? '\nFLAGGED' : ''}`,
+        title: `${node.type}\n${node.label}\n${node.riskScore ? 'Risk Score: ' + node.riskScore : ''}${node.amount ? 'Amount: M' + node.amount.toLocaleString() : ''}${node.isFlagged ? '\nFLAGGED' : ''}`,
         color: {
           background: colors.background,
           border: colors.border,
@@ -181,8 +181,8 @@ const Network = () => {
         id: `${edge.source}_${edge.target}_${edge.relationship}`,
         from: edge.source,
         to: edge.target,
-        label: edge.relationship === 'TRANSFERRED_TO' && edge.amount ? `$${edge.amount.toLocaleString()}` : '',
-        title: `${edge.relationship}${edge.amount ? '\nAmount: $' + edge.amount.toLocaleString() : ''}`,
+        label: edge.relationship === 'TRANSFERRED_TO' && edge.amount ? `M${edge.amount.toLocaleString()}` : '',
+        title: `${edge.relationship}${edge.amount ? '\nAmount: M' + edge.amount.toLocaleString() : ''}`,
         color: color,
         width: width,
         dashes: dashes,
