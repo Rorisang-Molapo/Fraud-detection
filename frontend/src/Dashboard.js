@@ -211,7 +211,7 @@ const Dashboard = () => {
           </div>
           <div className="stat-card">
             <div className="stat-label">TOTAL TRANSFER VOLUME</div>
-            <div className="stat-value">${stats.totalTransferAmount.toLocaleString()}</div>
+            <div className="stat-value">M{stats.totalTransferAmount.toLocaleString()}</div>
             <div className="stat-trend">Inter-account transfers</div>
           </div>
           <div className="stat-card">
