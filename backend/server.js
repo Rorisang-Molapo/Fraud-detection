@@ -302,14 +302,14 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
     }
 });
 
-// Fraud Alerts Endpoint - FIXED for actual data
+// Fraud Alerts Endpoint
 app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     const session = driver.session();
     
     try {
         const alerts = [];
         
-        // Get flagged transactions (these exist in your data)
+        // Get flagged transactions 
         const flaggedResult = await session.run(`
             MATCH (t:Transaction {isFlagged: true})<-[:MADE]-(a:Account)<-[:OWNS]-(c:Customer)
             RETURN t.transactionId AS transactionId, t.amount AS amount, t.timestamp AS timestamp,
