@@ -13,16 +13,16 @@ This project is a fraud detection and risk monitoring system that uses a graph d
 
 ---
 
-## 🛠️ Technologies Used
+## Technologies Used
 
- Technology and Purpose 
-
- React for Frontend UI 
- Neo4j for Graph database 
- Express.js for Backend API 
- vis-network for Network visualization 
- recharts for Charts and graphs 
- axios for  API calls 
+| Technology | Purpose |
+|------------|---------|
+| React | Frontend UI |
+| Neo4j | Graph database |
+| Express.js | Backend API |
+| vis-network | Network visualization |
+| recharts | Charts and graphs |
+| axios | API calls |
 
 ---
 
