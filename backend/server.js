@@ -82,7 +82,7 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
             MATCH (c:Customer) WITH COUNT(c) AS totalCustomers
             MATCH (t:Transaction) WITH totalCustomers, COUNT(t) AS totalTransactions
             MATCH (t2:Transaction {isFlagged: true}) WITH totalCustomers, totalTransactions, COUNT(t2) AS flaggedTransactions
-            MATCH (c2:Customer WHERE c2.status = 'high_risk' OR c2.riskScore >= 15) WITH totalCustomers, totalTransactions, flaggedTransactions, COUNT(c2) AS highRiskCustomers
+            MATCH (c2:Customer) WHERE c2.status = 'high_risk' OR c2.riskScore >= 15 WITH totalCustomers, totalTransactions, flaggedTransactions, COUNT(c2) AS highRiskCustomers
             OPTIONAL MATCH (:Account)-[r:TRANSFERRED_TO]->(:Account) WITH totalCustomers, totalTransactions, flaggedTransactions, highRiskCustomers, COALESCE(SUM(r.amount), 0) AS totalTransferAmount
             MATCH (c3:Customer) RETURN totalCustomers, totalTransactions, flaggedTransactions, highRiskCustomers, totalTransferAmount, COALESCE(AVG(c3.riskScore), 0) AS avgRiskScore
         `);
@@ -374,6 +374,117 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
     }
 });
 
+// report endpoints
+
+// Get flagged transactions for reports
+app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
+    const session = driver.session();
+    try {
+        const result = await session.run(`
+            MATCH (t:Transaction {isFlagged: true})<-[:MADE]-(a:Account)
+            OPTIONAL MATCH (t)-[:FROM_IP]->(ip:IPAddress)
+            OPTIONAL MATCH (t)-[:OCCURRED_AT]->(l:Location)
+            RETURN t.transactionId AS id, 
+                   t.amount AS amount, 
+                   t.type AS type, 
+                   t.timestamp AS timestamp,
+                   t.flagReason AS reason,
+                   a.accountNumber AS accountNumber,
+                   l.city AS location,
+                   ip.address AS ipAddress,
+                   ip.isVPN AS usedVPN
+            ORDER BY t.timestamp DESC
+        `);
+        
+        const flaggedTransactions = result.records.map(record => ({
+            id: record.get('id'),
+            amount: record.get('amount').toNumber(),
+            type: record.get('type'),
+            timestamp: record.get('timestamp'),
+            reason: record.get('reason') || 'Manual review required',
+            accountNumber: record.get('accountNumber') ? record.get('accountNumber').toNumber() : 'N/A',
+            location: record.get('location') || 'Unknown',
+            ipAddress: record.get('ipAddress') || 'Unknown',
+            usedVPN: record.get('usedVPN') || false
+        }));
+        
+        res.json(flaggedTransactions);
+    } catch (error) {
+        console.error('Flagged transactions error:', error);
+        res.status(500).json({ error: 'Failed to fetch flagged transactions' });
+    } finally {
+        await session.close();
+    }
+});
+
+// Get all transactions for reports
+app.get('/api/transactions/all', requireAuth, async (req, res) => {
+    const session = driver.session();
+    try {
+        const result = await session.run(`
+            MATCH (t:Transaction)<-[:MADE]-(a:Account)
+            OPTIONAL MATCH (t)-[:OCCURRED_AT]->(l:Location)
+            RETURN t.transactionId AS id, 
+                   t.amount AS amount, 
+                   t.type AS type, 
+                   t.timestamp AS timestamp,
+                   t.isFlagged AS isFlagged,
+                   a.accountNumber AS accountNumber,
+                   l.city AS location
+            ORDER BY t.timestamp DESC
+            LIMIT 50
+        `);
+        
+        const transactions = result.records.map(record => ({
+            id: record.get('id'),
+            amount: record.get('amount').toNumber(),
+            type: record.get('type'),
+            timestamp: record.get('timestamp'),
+            isFlagged: record.get('isFlagged'),
+            accountNumber: record.get('accountNumber').toNumber(),
+            location: record.get('location') || 'Unknown'
+        }));
+        
+        res.json(transactions);
+    } catch (error) {
+        console.error('Transactions error:', error);
+        res.status(500).json({ error: 'Failed to fetch transactions' });
+    } finally {
+        await session.close();
+    }
+});
+
+// Get system summary stats
+app.get('/api/system/summary', requireAuth, async (req, res) => {
+    const session = driver.session();
+    try {
+        const customerResult = await session.run(`MATCH (c:Customer) RETURN COUNT(c) AS count`);
+        const accountResult = await session.run(`MATCH (a:Account) RETURN COUNT(a) AS count`);
+        const flaggedAccountResult = await session.run(`MATCH (a:Account {isFlagged: true}) RETURN COUNT(a) AS count`);
+        const deviceResult = await session.run(`MATCH (d:Device) RETURN COUNT(d) AS count`);
+        const ipResult = await session.run(`MATCH (i:IPAddress) RETURN COUNT(i) AS count`);
+        const locationResult = await session.run(`MATCH (l:Location) RETURN COUNT(l) AS count`);
+        const transactionResult = await session.run(`MATCH (t:Transaction) RETURN COUNT(t) AS count`);
+        const flaggedTransactionResult = await session.run(`MATCH (t:Transaction {isFlagged: true}) RETURN COUNT(t) AS count`);
+        
+        res.json({
+            totalCustomers: customerResult.records[0].get('count').toNumber(),
+            totalAccounts: accountResult.records[0].get('count').toNumber(),
+            flaggedAccounts: flaggedAccountResult.records[0].get('count').toNumber(),
+            totalDevices: deviceResult.records[0].get('count').toNumber(),
+            totalIPs: ipResult.records[0].get('count').toNumber(),
+            totalLocations: locationResult.records[0].get('count').toNumber(),
+            totalTransactions: transactionResult.records[0].get('count').toNumber(),
+            flaggedTransactions: flaggedTransactionResult.records[0].get('count').toNumber()
+        });
+    } catch (error) {
+        console.error('System summary error:', error);
+        res.status(500).json({ error: 'Failed to fetch system summary' });
+    } finally {
+        await session.close();
+    }
+});
+
 // Reports: Risk Distribution with averages
 app.get('/api/reports/risk-distribution', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -530,6 +641,7 @@ app.get('/api/reports/proxy-endpoints', requireAuth, async (req, res) => {
         await session.close();
     }
 });
+
 // Get all transfers for reports
 app.get('/api/transfers', requireAuth, async (req, res) => {
     const session = driver.session();

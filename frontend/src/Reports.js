@@ -10,8 +10,18 @@ const Reports = () => {
   const [activePage, setActivePage] = useState('reports');
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState([]);
-  const [transactions, setTransactions] = useState([]);
-  const [transfers, setTransfers] = useState([]);
+  const [flaggedTransactions, setFlaggedTransactions] = useState([]);
+  const [allTransactions, setAllTransactions] = useState([]);
+  const [systemSummary, setSystemSummary] = useState({
+    totalCustomers: 0,
+    totalAccounts: 0,
+    flaggedAccounts: 0,
+    totalDevices: 0,
+    totalIPs: 0,
+    totalLocations: 0,
+    totalTransactions: 0,
+    flaggedTransactions: 0
+  });
   const [riskDistribution, setRiskDistribution] = useState({ high: 0, medium: 0, low: 0 });
   const [stats, setStats] = useState({
     totalCustomers: 0,
@@ -25,18 +35,24 @@ const Reports = () => {
   }, []);
 
   const fetchReportData = async () => {
+    setLoading(true);
     try {
-      const [customersRes, statsRes, riskRes, transfersRes] = await Promise.all([
+      const [customersRes, statsRes, flaggedRes, transactionsRes, summaryRes, riskDistRes] = await Promise.all([
         axios.get('http://localhost:5000/api/customers', { withCredentials: true }),
         axios.get('http://localhost:5000/api/dashboard/stats', { withCredentials: true }),
-        axios.get('http://localhost:5000/api/transfers', { withCredentials: true })
+        axios.get('http://localhost:5000/api/transactions/flagged', { withCredentials: true }),
+        axios.get('http://localhost:5000/api/transactions/all', { withCredentials: true }),
+        axios.get('http://localhost:5000/api/system/summary', { withCredentials: true }),
+        axios.get('http://localhost:5000/api/reports/risk-distribution', { withCredentials: true })
       ]);
 
       setCustomers(customersRes.data || []);
       setStats(statsRes.data);
-      setTransfers(transfersRes.data || []);
+      setFlaggedTransactions(flaggedRes.data || []);
+      setAllTransactions(transactionsRes.data || []);
+      setSystemSummary(summaryRes.data);
       
-      // Calculating risk distribution 
+      // Calculate risk distribution from customers
       const high = customersRes.data.filter(c => c.riskScore >= 30).length;
       const medium = customersRes.data.filter(c => c.riskScore >= 15 && c.riskScore < 30).length;
       const low = customersRes.data.filter(c => c.riskScore < 15 || c.riskScore === 0).length;
@@ -71,9 +87,14 @@ const Reports = () => {
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
   const exportToCSV = () => {
+    // Export customers
     const customerRows = customers.map(c => `${c.id},${c.name},${c.email},${c.phone},${c.riskScore},${c.status || 'normal'}`).join('\n');
-    const transactionRows = transactions.map(t => `${t.transactionId},${t.amount},${t.type},${t.isFlagged ? 'FLAGGED' : 'NORMAL'}`).join('\n');
-    const csvContent = `FRAUD DETECTION REPORT\nGenerated: ${new Date().toLocaleString()}\n\nCUSTOMERS\nID,Name,Email,Phone,Risk Score,Status\n${customerRows}\n\nTRANSACTIONS\nID,Amount,Type,Status\n${transactionRows}`;
+    
+    // Export flagged transactions
+    const flaggedRows = flaggedTransactions.map(t => `${t.id},${t.accountNumber},${t.amount},${t.type},${t.reason}`).join('\n');
+    
+    const csvContent = `FRAUD DETECTION REPORT\nGenerated: ${new Date().toLocaleString()}\n\n========================================\nCUSTOMERS\n========================================\nID,Name,Email,Phone,Risk Score,Status\n${customerRows}\n\n========================================\nFLAGGED TRANSACTIONS\n========================================\nID,Account Number,Amount,Type,Reason\n${flaggedRows}\n\n========================================\nSYSTEM SUMMARY\n========================================\nTotal Customers: ${systemSummary.totalCustomers}\nTotal Accounts: ${systemSummary.totalAccounts}\nFlagged Accounts: ${systemSummary.flaggedAccounts}\nTotal Transactions: ${systemSummary.totalTransactions}\nFlagged Transactions: ${systemSummary.flaggedTransactions}\nTotal Devices: ${systemSummary.totalDevices}\nTotal IP Addresses: ${systemSummary.totalIPs}\nTotal Locations: ${systemSummary.totalLocations}`;
+    
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -91,11 +112,25 @@ const Reports = () => {
     return 'risk-low-text';
   };
 
+  const getSeverityBadge = (reason) => {
+    if (reason && reason.toLowerCase().includes('vpn')) return 'badge-warning';
+    if (reason && reason.toLowerCase().includes('threshold')) return 'badge-danger';
+    return 'badge-info';
+  };
+
   const pieData = [
-    { name: 'High Risk', value: riskDistribution.high, color: '#ef4444' },
-    { name: 'Medium Risk', value: riskDistribution.medium, color: '#f59e0b' },
-    { name: 'Low Risk', value: riskDistribution.low, color: '#10b981' }
+    { name: 'High Risk (30+)', value: riskDistribution.high, color: '#ef4444' },
+    { name: 'Medium Risk (15-29)', value: riskDistribution.medium, color: '#f59e0b' },
+    { name: 'Low Risk (0-14)', value: riskDistribution.low, color: '#10b981' }
   ].filter(item => item.value > 0);
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    if (typeof timestamp === 'object' && timestamp.toString) {
+      return new Date(timestamp.toString()).toLocaleString();
+    }
+    return new Date(timestamp).toLocaleString();
+  };
 
   if (loading) {
     return (
@@ -118,8 +153,11 @@ const Reports = () => {
       <div className="sidebar" style={{ width: sidebarOpen ? '260px' : '60px' }}>
         <div className="sidebar-header">
           {sidebarOpen && <h2 className="sidebar-title">FEDERAL 20!</h2>}
-          <button className="sidebar-toggle" onClick={toggleSidebar}>{sidebarOpen ? '<' : '>'}</button>
+          <button className="sidebar-toggle" onClick={toggleSidebar}>
+            {sidebarOpen ? '<' : '>'}
+          </button>
         </div>
+        
         <nav className="sidebar-nav">
           <button onClick={() => handleNavigate('dashboard', '/dashboard')} className={`nav-item ${activePage === 'dashboard' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'DASHBOARD' : 'DB'}
@@ -137,7 +175,10 @@ const Reports = () => {
             {sidebarOpen ? 'REPORTS' : 'RP'}
           </button>
         </nav>
-        <button onClick={handleLogout} className="logout-nav-item">{sidebarOpen ? 'LOGOUT' : 'LO'}</button>
+        
+        <button onClick={handleLogout} className="logout-nav-item">
+          {sidebarOpen ? 'LOGOUT' : 'LO'}
+        </button>
       </div>
 
       {/* Main Content */}
@@ -166,19 +207,39 @@ const Reports = () => {
         <div className="reports-stats-row">
           <div className="reports-stat-card">
             <div className="reports-stat-label">TOTAL CUSTOMERS</div>
-            <div className="reports-stat-value">{stats.totalCustomers}</div>
+            <div className="reports-stat-value">{systemSummary.totalCustomers}</div>
+          </div>
+          <div className="reports-stat-card">
+            <div className="reports-stat-label">TOTAL ACCOUNTS</div>
+            <div className="reports-stat-value">{systemSummary.totalAccounts}</div>
           </div>
           <div className="reports-stat-card">
             <div className="reports-stat-label">TOTAL TRANSACTIONS</div>
-            <div className="reports-stat-value">{stats.totalTransactions}</div>
+            <div className="reports-stat-value">{systemSummary.totalTransactions}</div>
           </div>
           <div className="reports-stat-card">
             <div className="reports-stat-label">FLAGGED TRANSACTIONS</div>
-            <div className="reports-stat-value">{stats.flaggedTransactions}</div>
+            <div className="reports-stat-value" style={{ color: '#ef4444' }}>{systemSummary.flaggedTransactions}</div>
           </div>
+        </div>
+
+        {/* Second Stats Row */}
+        <div className="reports-stats-row">
           <div className="reports-stat-card">
             <div className="reports-stat-label">HIGH RISK CUSTOMERS</div>
-            <div className="reports-stat-value">{stats.highRiskCustomers}</div>
+            <div className="reports-stat-value" style={{ color: '#ef4444' }}>{riskDistribution.high}</div>
+          </div>
+          <div className="reports-stat-card">
+            <div className="reports-stat-label">MEDIUM RISK CUSTOMERS</div>
+            <div className="reports-stat-value" style={{ color: '#f59e0b' }}>{riskDistribution.medium}</div>
+          </div>
+          <div className="reports-stat-card">
+            <div className="reports-stat-label">FLAGGED ACCOUNTS</div>
+            <div className="reports-stat-value" style={{ color: '#ef4444' }}>{systemSummary.flaggedAccounts}</div>
+          </div>
+          <div className="reports-stat-card">
+            <div className="reports-stat-label">DEVICES MONITORED</div>
+            <div className="reports-stat-value">{systemSummary.totalDevices}</div>
           </div>
         </div>
 
@@ -235,7 +296,13 @@ const Reports = () => {
                 {customers.length > 0 ? (
                   <table className="reports-table">
                     <thead>
-                      <tr><th>ID</th><th>Name</th><th>Email</th><th>Risk Score</th><th>Status</th></tr>
+                      <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Risk Score</th>
+                        <th>Status</th>
+                      </tr>
                     </thead>
                     <tbody>
                       {customers.map((customer) => (
@@ -264,18 +331,78 @@ const Reports = () => {
                 <h3>FLAGGED TRANSACTIONS</h3>
               </div>
               <div className="transaction-table-container">
-                {stats.flaggedTransactions > 0 ? (
+                {flaggedTransactions.length > 0 ? (
                   <table className="reports-table">
                     <thead>
-                      <tr><th>Transaction ID</th><th>Amount</th><th>Type</th><th>Reason</th></tr>
+                      <tr>
+                        <th>Transaction ID</th>
+                        <th>Account</th>
+                        <th>Amount</th>
+                        <th>Type</th>
+                        <th>Reason</th>
+                        <th>Date</th>
+                      </tr>
                     </thead>
                     <tbody>
-                      {/* Transaction data will be shown from API */}
-                      <tr><td colSpan="4" className="loading-text">Loading transaction details...</td></tr>
+                      {flaggedTransactions.map((transaction) => (
+                        <tr key={transaction.id}>
+                          <td><code>{transaction.id}</code></td>
+                          <td>{transaction.accountNumber}</td>
+                          <td style={{ color: '#ef4444', fontWeight: 'bold' }}>${transaction.amount.toLocaleString()}</td>
+                          <td>{transaction.type?.toUpperCase() || 'TRANSFER'}</td>
+                          <td>
+                            <span className={`severity-badge ${getSeverityBadge(transaction.reason)}`}>
+                              {transaction.reason}
+                            </span>
+                          </td>
+                          <td>{formatDate(transaction.timestamp)}</td>
+                        </tr>
+                      ))}
                     </tbody>
-                   </table>
+                  </table>
                 ) : (
-                  <div className="no-data">No flagged transactions</div>
+                  <div className="no-data">No flagged transactions found</div>
+                )}
+              </div>
+            </div>
+
+            {/* Recent All Transactions Card */}
+            <div className="reports-card">
+              <div className="reports-card-header">
+                <h3>RECENT TRANSACTIONS</h3>
+              </div>
+              <div className="transaction-table-container">
+                {allTransactions.length > 0 ? (
+                  <table className="reports-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Account</th>
+                        <th>Amount</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allTransactions.slice(0, 10).map((transaction) => (
+                        <tr key={transaction.id}>
+                          <td><code>{transaction.id}</code></td>
+                          <td>{transaction.accountNumber}</td>
+                          <td>${transaction.amount.toLocaleString()}</td>
+                          <td>{transaction.type?.toUpperCase() || 'TRANSFER'}</td>
+                          <td>
+                            <span className={transaction.isFlagged ? 'status-flagged' : 'status-normal'}>
+                              {transaction.isFlagged ? 'FLAGGED' : 'NORMAL'}
+                            </span>
+                          </td>
+                          <td>{formatDate(transaction.timestamp)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="no-data">No transactions found</div>
                 )}
               </div>
             </div>
@@ -288,23 +415,27 @@ const Reports = () => {
               <div className="summary-stats">
                 <div className="summary-item">
                   <span className="summary-label">Database Nodes:</span>
-                  <span className="summary-value">{customers.length + stats.totalTransactions + 5}</span>
+                  <span className="summary-value">{systemSummary.totalCustomers + systemSummary.totalAccounts + systemSummary.totalTransactions + systemSummary.totalDevices + systemSummary.totalIPs + systemSummary.totalLocations}</span>
                 </div>
                 <div className="summary-item">
                   <span className="summary-label">Active Accounts:</span>
-                  <span className="summary-value">5</span>
+                  <span className="summary-value">{systemSummary.totalAccounts - systemSummary.flaggedAccounts}</span>
                 </div>
                 <div className="summary-item">
                   <span className="summary-label">Flagged Accounts:</span>
-                  <span className="summary-value">1</span>
+                  <span className="summary-value">{systemSummary.flaggedAccounts}</span>
                 </div>
                 <div className="summary-item">
                   <span className="summary-label">Device Count:</span>
-                  <span className="summary-value">5</span>
+                  <span className="summary-value">{systemSummary.totalDevices}</span>
                 </div>
                 <div className="summary-item">
                   <span className="summary-label">IP Addresses Monitored:</span>
-                  <span className="summary-value">5</span>
+                  <span className="summary-value">{systemSummary.totalIPs}</span>
+                </div>
+                <div className="summary-item">
+                  <span className="summary-label">Locations Tracked:</span>
+                  <span className="summary-value">{systemSummary.totalLocations}</span>
                 </div>
               </div>
             </div>
