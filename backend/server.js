@@ -530,6 +530,31 @@ app.get('/api/reports/proxy-endpoints', requireAuth, async (req, res) => {
         await session.close();
     }
 });
+// Get all transfers for reports
+app.get('/api/transfers', requireAuth, async (req, res) => {
+    const session = driver.session();
+    try {
+        const result = await session.run(`
+            MATCH (a1:Account)-[r:TRANSFERRED_TO]->(a2:Account)
+            RETURN a1.accountNumber AS fromAccount, a2.accountNumber AS toAccount, 
+                   r.amount AS amount, r.timestamp AS timestamp, r.reference AS reference
+            ORDER BY r.timestamp DESC
+        `);
+        const transfers = result.records.map(record => ({
+            fromAccount: record.get('fromAccount').toNumber(),
+            toAccount: record.get('toAccount').toNumber(),
+            amount: record.get('amount').toNumber(),
+            timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
+            reference: record.get('reference')
+        }));
+        res.json(transfers);
+    } catch (error) {
+        console.error('Transfers error:', error);
+        res.json([]);
+    } finally {
+        await session.close();
+    }
+});
 
 app.listen(5000, () => {
     console.log('Server running on port 5000');
