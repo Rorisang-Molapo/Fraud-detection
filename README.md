@@ -55,10 +55,11 @@ connect your instance to Query and run your commands
 ## Step 5: Configure Environment Variables
 Create a .env file in the root directory but remeber that you never push this file to git hub since it contains all your database passwords 
 this is how your env file will look like:
+```
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=yourpassword
-
+```
 ## start your application.
 ---
 ## FEDERAL 20! TO THE WORLD © 2026
