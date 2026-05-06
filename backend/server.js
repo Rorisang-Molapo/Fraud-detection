@@ -32,22 +32,28 @@ const requireAuth = (req, res, next) => {
     }
 };
 
-// Login endpoint
+// Login endpoint 
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const neo4jSession = driver.session();
     try {
         const result = await neo4jSession.run(
-            `MATCH (u:User {username: $username, password: $password}) RETURN u.username AS username, u.role AS role`,
+            `MATCH (u:User {username: $username, password: $password}) 
+             RETURN u.username AS username, u.role AS role, u.customerId AS customerId`,
             { username, password }
         );
         if (result.records.length > 0) {
             req.session.user = {
                 username: result.records[0].get('username'),
-                role: result.records[0].get('role'),
+                role: result.records[0].get('role') || 'customer',
+                customerId: result.records[0].get('customerId'),
                 loggedIn: true
             };
-            res.json({ success: true });
+            res.json({ 
+                success: true, 
+                role: req.session.user.role,
+                redirect: req.session.user.role === 'customer' ? '/customer-dashboard' : '/dashboard'
+            });
         } else {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
