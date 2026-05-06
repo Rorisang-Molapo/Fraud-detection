@@ -22,8 +22,15 @@ const Login = ({ onLogin }) => {
       });
 
       if (response.data.success) {
-  onLogin();
-  window.location.href = '/dashboard';
+        // Call onLogin to update App state
+        onLogin();
+        
+        // Redirect based on role returned from server
+        if (response.data.role === 'admin') {
+          window.location.href = '/dashboard';
+        } else {
+          window.location.href = '/customer-dashboard';
+        }
       } else {
         setError('Invalid credentials');
       }
