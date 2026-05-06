@@ -22,7 +22,7 @@ function App() {
         });
         setIsLoggedIn(response.data.authenticated);
         
-        // If logged in, check if user is admin or customer
+        
         if (response.data.authenticated) {
           try {
             const dashboardRes = await axios.get('http://localhost:5000/api/customer/dashboard', {

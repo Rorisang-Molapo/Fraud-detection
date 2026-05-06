@@ -32,7 +32,8 @@ const requireAuth = (req, res, next) => {
     }
 };
 
-// Login endpoint 
+// AUTHENTICATION ENDPOINTS 
+
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const neo4jSession = driver.session();
@@ -42,17 +43,22 @@ app.post('/api/login', async (req, res) => {
              RETURN u.username AS username, u.role AS role, u.customerId AS customerId`,
             { username, password }
         );
+        
         if (result.records.length > 0) {
+            const role = result.records[0].get('role') || 'customer';
+            const customerId = result.records[0].get('customerId');
+            
             req.session.user = {
                 username: result.records[0].get('username'),
-                role: result.records[0].get('role') || 'customer',
-                customerId: result.records[0].get('customerId'),
+                role: role,
+                customerId: customerId,
                 loggedIn: true
             };
+            
             res.json({ 
                 success: true, 
-                role: req.session.user.role,
-                redirect: req.session.user.role === 'customer' ? '/customer-dashboard' : '/dashboard'
+                role: role,
+                redirect: role === 'admin' ? '/dashboard' : '/customer-dashboard'
             });
         } else {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
@@ -65,22 +71,24 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Check auth endpoint
 app.get('/api/check-auth', (req, res) => {
     if (req.session.user && req.session.user.loggedIn) {
-        res.json({ authenticated: true });
+        res.json({ 
+            authenticated: true,
+            role: req.session.user.role 
+        });
     } else {
-        res.json({ authenticated: false });
+        res.json({ authenticated: false, role: null });
     }
 });
 
-// Logout endpoint
 app.post('/api/logout', (req, res) => {
     req.session.destroy();
     res.json({ success: true });
 });
 
-// Dashboard Stats
+// DASHBOARD ENDPOINTS 
+
 app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -109,7 +117,6 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     }
 });
 
-// High Risk Alerts
 app.get('/api/dashboard/high-risk-alerts', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -132,7 +139,6 @@ app.get('/api/dashboard/high-risk-alerts', requireAuth, async (req, res) => {
     }
 });
 
-// Risk Distribution
 app.get('/api/dashboard/risk-distribution', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -156,7 +162,8 @@ app.get('/api/dashboard/risk-distribution', requireAuth, async (req, res) => {
     }
 });
 
-// Get all customers
+// CUSTOMER MANAGEMENT 
+
 app.get('/api/customers', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -182,7 +189,6 @@ app.get('/api/customers', requireAuth, async (req, res) => {
     }
 });
 
-// Search customers
 app.get('/api/customers/search', requireAuth, async (req, res) => {
     const { q } = req.query;
     const session = driver.session();
@@ -210,7 +216,6 @@ app.get('/api/customers/search', requireAuth, async (req, res) => {
     }
 });
 
-// Get customer by ID with accounts and transactions
 app.get('/api/customers/:id', requireAuth, async (req, res) => {
     const { id } = req.params;
     const session = driver.session();
@@ -265,7 +270,8 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
     }
 });
 
-// Fraud Alerts Endpoint
+// FRAUD ALERTS 
+
 app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -337,7 +343,8 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     }
 });
 
-// Network data endpoint
+//NETWORK VISUALIZATION 
+
 app.get('/api/network/data', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -380,9 +387,8 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
     }
 });
 
-// report endpoints
+// REPORT ENDPOINTS 
 
-// Get flagged transactions for reports
 app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -423,7 +429,6 @@ app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
     }
 });
 
-// Get all transactions for reports
 app.get('/api/transactions/all', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -460,7 +465,6 @@ app.get('/api/transactions/all', requireAuth, async (req, res) => {
     }
 });
 
-// Get system summary stats
 app.get('/api/system/summary', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -491,7 +495,6 @@ app.get('/api/system/summary', requireAuth, async (req, res) => {
     }
 });
 
-// Reports: Risk Distribution with averages
 app.get('/api/reports/risk-distribution', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -523,7 +526,6 @@ app.get('/api/reports/risk-distribution', requireAuth, async (req, res) => {
     }
 });
 
-// Reports: Money Mule Detection
 app.get('/api/reports/money-mules', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -558,7 +560,6 @@ app.get('/api/reports/money-mules', requireAuth, async (req, res) => {
     }
 });
 
-// Reports: Impossible Travel Alerts
 app.get('/api/reports/impossible-travel', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -593,7 +594,6 @@ app.get('/api/reports/impossible-travel', requireAuth, async (req, res) => {
     }
 });
 
-// Reports: VPN/Proxy Analysis
 app.get('/api/reports/vpn-analysis', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -622,7 +622,6 @@ app.get('/api/reports/vpn-analysis', requireAuth, async (req, res) => {
     }
 });
 
-// Reports: Suspicious Proxy Endpoints
 app.get('/api/reports/proxy-endpoints', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -648,7 +647,6 @@ app.get('/api/reports/proxy-endpoints', requireAuth, async (req, res) => {
     }
 });
 
-// Get all transfers for reports
 app.get('/api/transfers', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -674,15 +672,13 @@ app.get('/api/transfers', requireAuth, async (req, res) => {
     }
 });
 
-// customer banking endpoints
+//  CUSTOMER BANKING ENDPOINTS 
 
-// Get customer dashboard data
 app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
     const session = driver.session();
     const username = req.session.user.username;
     
     try {
-        // First check if user is a customer
         const userCheck = await session.run(`
             MATCH (u:User {username: $username})
             RETURN u.role AS role
@@ -694,7 +690,6 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         
         const role = userCheck.records[0].get('role');
         
-        // Get customer data
         const customerResult = await session.run(`
             MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)
             OPTIONAL MATCH (c)-[:OWNS]->(a:Account)
@@ -713,7 +708,6 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         `, { username });
         
         if (customerResult.records.length === 0) {
-            // User is admin, not customer
             return res.json({ isAdmin: true, role: role });
         }
         
@@ -721,7 +715,6 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         const accounts = record.get('accounts').filter(acc => acc.accountNumber !== null);
         const totalBalance = accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
         
-        // Get recent transactions
         const transactionsResult = await session.run(`
             MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account)
             MATCH (a)-[:MADE]->(t:Transaction)
@@ -749,7 +742,6 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             location: record.get('location')
         }));
         
-        // Get incoming transfers
         const incomingResult = await session.run(`
             MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account)
             MATCH (sender:Account)-[r:TRANSFERRED_TO]->(a)
@@ -771,7 +763,6 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             fromName: record.get('fromName')
         }));
         
-        // Get outgoing transfers
         const outgoingResult = await session.run(`
             MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account)
             MATCH (a)-[r:TRANSFERRED_TO]->(receiver:Account)
@@ -815,7 +806,6 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
     }
 });
 
-// Send money transfer
 app.post('/api/customer/transfer', requireAuth, async (req, res) => {
     const session = driver.session();
     const username = req.session.user.username;
@@ -826,7 +816,6 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
     }
     
     try {
-        // Verify customer owns the source account
         const authResult = await session.run(`
             MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account {accountNumber: $fromAccount})
             RETURN a.accountNumber AS accountNumber, a.balance AS balance, a.status AS status
@@ -847,7 +836,6 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Insufficient funds' });
         }
         
-        // Check if target account exists
         const targetResult = await session.run(`
             MATCH (target:Account {accountNumber: $toAccount})
             RETURN target.accountNumber AS accountNumber, target.status AS status
@@ -862,28 +850,22 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Recipient account is frozen' });
         }
         
-        // Perform transfer
         const tx = session.beginTransaction();
         
         try {
-            // Deduct from sender
             await tx.run(`
                 MATCH (a:Account {accountNumber: $fromAccount})
                 SET a.balance = a.balance - $amount
-                RETURN a.balance
             `, { fromAccount: fromAccountNumber, amount });
             
-            // Add to receiver
             await tx.run(`
                 MATCH (a:Account {accountNumber: $toAccount})
                 SET a.balance = a.balance + $amount
-                RETURN a.balance
             `, { toAccount: toAccountNumber, amount });
             
             const isFlagged = amount > 10000;
             const transactionId = 'TXN' + Date.now();
             
-            // Create transfer relationship
             await tx.run(`
                 MATCH (from:Account {accountNumber: $fromAccount})
                 MATCH (to:Account {accountNumber: $toAccount})
@@ -895,7 +877,6 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
                 }]->(to)
             `, { fromAccount: fromAccountNumber, toAccount: toAccountNumber, amount, reference, isFlagged });
             
-            // Create transaction record
             await tx.run(`
                 MATCH (from:Account {accountNumber: $fromAccount})
                 CREATE (t:Transaction {
@@ -911,7 +892,6 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
             
             await tx.commit();
             
-            // Get updated balance
             const newBalanceResult = await session.run(`
                 MATCH (a:Account {accountNumber: $fromAccount})
                 RETURN a.balance AS newBalance
@@ -937,7 +917,6 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
     }
 });
 
-// Search for account
 app.get('/api/customer/search-account', requireAuth, async (req, res) => {
     const session = driver.session();
     const { q } = req.query;
@@ -965,62 +944,6 @@ app.get('/api/customer/search-account', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Search error:', error);
         res.status(500).json({ error: 'Search failed' });
-    } finally {
-        await session.close();
-    }
-});
-
-// Get account statement
-app.get('/api/customer/statement/:accountNumber', requireAuth, async (req, res) => {
-    const session = driver.session();
-    const username = req.session.user.username;
-    const { accountNumber } = req.params;
-    
-    try {
-        const authResult = await session.run(`
-            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account {accountNumber: $accountNumber})
-            RETURN a.accountNumber AS accountNumber, a.balance AS balance
-        `, { username, accountNumber: parseInt(accountNumber) });
-        
-        if (authResult.records.length === 0) {
-            return res.status(403).json({ error: 'Unauthorized' });
-        }
-        
-        const balance = authResult.records[0].get('balance').toNumber();
-        
-        const transactionsResult = await session.run(`
-            MATCH (a:Account {accountNumber: $accountNumber})
-            MATCH (a)-[:MADE]->(t:Transaction)
-            OPTIONAL MATCH (t)-[:OCCURRED_AT]->(l:Location)
-            RETURN t.transactionId AS id,
-                   t.amount AS amount,
-                   t.type AS type,
-                   t.timestamp AS timestamp,
-                   t.isFlagged AS isFlagged,
-                   t.merchant AS merchant,
-                   l.city AS location
-            ORDER BY t.timestamp DESC
-        `, { accountNumber: parseInt(accountNumber) });
-        
-        const transactions = transactionsResult.records.map(record => ({
-            id: record.get('id'),
-            amount: record.get('amount').toNumber(),
-            type: record.get('type'),
-            timestamp: record.get('timestamp'),
-            isFlagged: record.get('isFlagged'),
-            merchant: record.get('merchant'),
-            location: record.get('location')
-        }));
-        
-        res.json({
-            accountNumber: parseInt(accountNumber),
-            balance: balance,
-            transactions: transactions
-        });
-        
-    } catch (error) {
-        console.error('Statement error:', error);
-        res.status(500).json({ error: 'Failed to fetch statement' });
     } finally {
         await session.close();
     }
