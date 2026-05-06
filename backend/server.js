@@ -309,7 +309,7 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     try {
         const alerts = [];
         
-        // Get flagged transactions 
+        //flagged transactions 
         const flaggedResult = await session.run(`
             MATCH (t:Transaction {isFlagged: true})<-[:MADE]-(a:Account)<-[:OWNS]-(c:Customer)
             RETURN t.transactionId AS transactionId, t.amount AS amount, t.timestamp AS timestamp,
@@ -357,7 +357,7 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
             });
         });
         
-        // Get money laundering paths (2+ hop transfers)
+        // Get money laundering paths and circular transactions
         const pathResult = await session.run(`
             MATCH path = (src:Account)-[:TRANSFERRED_TO*2..3]->(dst:Account)
             WHERE src <> dst
@@ -392,7 +392,7 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     }
 });
 
-// Network Data - Get all nodes and edges for visualization
+//Get all nodes and edges for visualization
 app.get('/api/network/data', requireAuth, async (req, res) => {
     const session = driver.session();
     
