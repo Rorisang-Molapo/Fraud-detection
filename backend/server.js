@@ -668,6 +668,358 @@ app.get('/api/transfers', requireAuth, async (req, res) => {
     }
 });
 
+// customer banking endpoints
+
+// Get customer dashboard data
+app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
+    const session = driver.session();
+    const username = req.session.user.username;
+    
+    try {
+        // First check if user is a customer
+        const userCheck = await session.run(`
+            MATCH (u:User {username: $username})
+            RETURN u.role AS role
+        `, { username });
+        
+        if (userCheck.records.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        const role = userCheck.records[0].get('role');
+        
+        // Get customer data
+        const customerResult = await session.run(`
+            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)
+            OPTIONAL MATCH (c)-[:OWNS]->(a:Account)
+            RETURN c.id AS customerId, 
+                   c.name AS name,
+                   c.riskScore AS riskScore,
+                   c.status AS status,
+                   c.joinDate AS joinDate,
+                   COLLECT(DISTINCT {
+                       accountNumber: a.accountNumber,
+                       type: a.type,
+                       balance: a.balance,
+                       status: a.status,
+                       isFlagged: a.isFlagged
+                   }) AS accounts
+        `, { username });
+        
+        if (customerResult.records.length === 0) {
+            // User is admin, not customer
+            return res.json({ isAdmin: true, role: role });
+        }
+        
+        const record = customerResult.records[0];
+        const accounts = record.get('accounts').filter(acc => acc.accountNumber !== null);
+        const totalBalance = accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
+        
+        // Get recent transactions
+        const transactionsResult = await session.run(`
+            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account)
+            MATCH (a)-[:MADE]->(t:Transaction)
+            OPTIONAL MATCH (t)-[:OCCURRED_AT]->(l:Location)
+            RETURN t.transactionId AS id,
+                   t.amount AS amount,
+                   t.type AS type,
+                   t.timestamp AS timestamp,
+                   t.isFlagged AS isFlagged,
+                   t.merchant AS merchant,
+                   t.flagReason AS flagReason,
+                   l.city AS location
+            ORDER BY t.timestamp DESC
+            LIMIT 20
+        `, { username });
+        
+        const transactions = transactionsResult.records.map(record => ({
+            id: record.get('id'),
+            amount: record.get('amount').toNumber(),
+            type: record.get('type'),
+            timestamp: record.get('timestamp'),
+            isFlagged: record.get('isFlagged'),
+            merchant: record.get('merchant'),
+            flagReason: record.get('flagReason'),
+            location: record.get('location')
+        }));
+        
+        // Get incoming transfers
+        const incomingResult = await session.run(`
+            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account)
+            MATCH (sender:Account)-[r:TRANSFERRED_TO]->(a)
+            OPTIONAL MATCH (sender)<-[:OWNS]-(senderCustomer:Customer)
+            RETURN r.amount AS amount,
+                   r.timestamp AS timestamp,
+                   r.reference AS reference,
+                   sender.accountNumber AS fromAccount,
+                   senderCustomer.name AS fromName
+            ORDER BY r.timestamp DESC
+            LIMIT 10
+        `, { username });
+        
+        const incomingTransfers = incomingResult.records.map(record => ({
+            amount: record.get('amount') ? record.get('amount').toNumber() : 0,
+            timestamp: record.get('timestamp'),
+            reference: record.get('reference'),
+            fromAccount: record.get('fromAccount') ? record.get('fromAccount').toNumber() : null,
+            fromName: record.get('fromName')
+        }));
+        
+        // Get outgoing transfers
+        const outgoingResult = await session.run(`
+            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account)
+            MATCH (a)-[r:TRANSFERRED_TO]->(receiver:Account)
+            OPTIONAL MATCH (receiver)<-[:OWNS]-(receiverCustomer:Customer)
+            RETURN r.amount AS amount,
+                   r.timestamp AS timestamp,
+                   r.reference AS reference,
+                   receiver.accountNumber AS toAccount,
+                   receiverCustomer.name AS toName
+            ORDER BY r.timestamp DESC
+            LIMIT 10
+        `, { username });
+        
+        const outgoingTransfers = outgoingResult.records.map(record => ({
+            amount: record.get('amount') ? record.get('amount').toNumber() : 0,
+            timestamp: record.get('timestamp'),
+            reference: record.get('reference'),
+            toAccount: record.get('toAccount') ? record.get('toAccount').toNumber() : null,
+            toName: record.get('toName')
+        }));
+        
+        res.json({
+            isCustomer: true,
+            customerId: record.get('customerId'),
+            name: record.get('name'),
+            riskScore: record.get('riskScore') ? record.get('riskScore').toNumber() : 0,
+            status: record.get('status'),
+            joinDate: record.get('joinDate'),
+            accounts: accounts,
+            totalBalance: totalBalance,
+            recentTransactions: transactions,
+            incomingTransfers: incomingTransfers,
+            outgoingTransfers: outgoingTransfers
+        });
+        
+    } catch (error) {
+        console.error('Customer dashboard error:', error);
+        res.status(500).json({ error: 'Failed to fetch customer data' });
+    } finally {
+        await session.close();
+    }
+});
+
+// Send money transfer
+app.post('/api/customer/transfer', requireAuth, async (req, res) => {
+    const session = driver.session();
+    const username = req.session.user.username;
+    const { fromAccountNumber, toAccountNumber, amount, reference } = req.body;
+    
+    if (!fromAccountNumber || !toAccountNumber || !amount || amount <= 0) {
+        return res.status(400).json({ error: 'Invalid transfer details' });
+    }
+    
+    try {
+        // Verify customer owns the source account
+        const authResult = await session.run(`
+            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account {accountNumber: $fromAccount})
+            RETURN a.accountNumber AS accountNumber, a.balance AS balance, a.status AS status
+        `, { username, fromAccount: fromAccountNumber });
+        
+        if (authResult.records.length === 0) {
+            return res.status(403).json({ error: 'You do not own this account' });
+        }
+        
+        const currentBalance = authResult.records[0].get('balance').toNumber();
+        const accountStatus = authResult.records[0].get('status');
+        
+        if (accountStatus === 'frozen') {
+            return res.status(400).json({ error: 'Your account is frozen. Please contact support.' });
+        }
+        
+        if (currentBalance < amount) {
+            return res.status(400).json({ error: 'Insufficient funds' });
+        }
+        
+        // Check if target account exists
+        const targetResult = await session.run(`
+            MATCH (target:Account {accountNumber: $toAccount})
+            RETURN target.accountNumber AS accountNumber, target.status AS status
+        `, { toAccount: toAccountNumber });
+        
+        if (targetResult.records.length === 0) {
+            return res.status(404).json({ error: 'Recipient account not found' });
+        }
+        
+        const targetStatus = targetResult.records[0].get('status');
+        if (targetStatus === 'frozen') {
+            return res.status(400).json({ error: 'Recipient account is frozen' });
+        }
+        
+        // Perform transfer
+        const tx = session.beginTransaction();
+        
+        try {
+            // Deduct from sender
+            await tx.run(`
+                MATCH (a:Account {accountNumber: $fromAccount})
+                SET a.balance = a.balance - $amount
+                RETURN a.balance
+            `, { fromAccount: fromAccountNumber, amount });
+            
+            // Add to receiver
+            await tx.run(`
+                MATCH (a:Account {accountNumber: $toAccount})
+                SET a.balance = a.balance + $amount
+                RETURN a.balance
+            `, { toAccount: toAccountNumber, amount });
+            
+            const isFlagged = amount > 10000;
+            const transactionId = 'TXN' + Date.now();
+            
+            // Create transfer relationship
+            await tx.run(`
+                MATCH (from:Account {accountNumber: $fromAccount})
+                MATCH (to:Account {accountNumber: $toAccount})
+                CREATE (from)-[:TRANSFERRED_TO {
+                    amount: $amount,
+                    timestamp: datetime(),
+                    reference: $reference,
+                    isSuspicious: $isFlagged
+                }]->(to)
+            `, { fromAccount: fromAccountNumber, toAccount: toAccountNumber, amount, reference, isFlagged });
+            
+            // Create transaction record
+            await tx.run(`
+                MATCH (from:Account {accountNumber: $fromAccount})
+                CREATE (t:Transaction {
+                    transactionId: $transactionId,
+                    amount: $amount,
+                    timestamp: datetime(),
+                    type: 'transfer',
+                    isFlagged: $isFlagged,
+                    flagReason: CASE WHEN $isFlagged THEN 'Amount exceeds $10,000 threshold' ELSE null END
+                })
+                CREATE (from)-[:MADE]->(t)
+            `, { fromAccount: fromAccountNumber, amount, transactionId, isFlagged });
+            
+            await tx.commit();
+            
+            // Get updated balance
+            const newBalanceResult = await session.run(`
+                MATCH (a:Account {accountNumber: $fromAccount})
+                RETURN a.balance AS newBalance
+            `, { fromAccount: fromAccountNumber });
+            
+            res.json({
+                success: true,
+                message: `Successfully transferred $${amount.toLocaleString()} to account ${toAccountNumber}`,
+                newBalance: newBalanceResult.records[0].get('newBalance').toNumber(),
+                isFlagged: isFlagged
+            });
+            
+        } catch (txError) {
+            await tx.rollback();
+            throw txError;
+        }
+        
+    } catch (error) {
+        console.error('Transfer error:', error);
+        res.status(500).json({ error: 'Transfer failed. Please try again.' });
+    } finally {
+        await session.close();
+    }
+});
+
+// Search for account
+app.get('/api/customer/search-account', requireAuth, async (req, res) => {
+    const session = driver.session();
+    const { q } = req.query;
+    
+    try {
+        const result = await session.run(`
+            MATCH (a:Account)
+            WHERE toString(a.accountNumber) CONTAINS $q
+            OPTIONAL MATCH (a)<-[:OWNS]-(c:Customer)
+            RETURN a.accountNumber AS accountNumber,
+                   a.type AS type,
+                   a.status AS status,
+                   c.name AS ownerName
+            LIMIT 10
+        `, { q });
+        
+        const accounts = result.records.map(record => ({
+            accountNumber: record.get('accountNumber').toNumber(),
+            type: record.get('type'),
+            status: record.get('status'),
+            ownerName: record.get('ownerName') || 'Unknown'
+        }));
+        
+        res.json(accounts);
+    } catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({ error: 'Search failed' });
+    } finally {
+        await session.close();
+    }
+});
+
+// Get account statement
+app.get('/api/customer/statement/:accountNumber', requireAuth, async (req, res) => {
+    const session = driver.session();
+    const username = req.session.user.username;
+    const { accountNumber } = req.params;
+    
+    try {
+        const authResult = await session.run(`
+            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account {accountNumber: $accountNumber})
+            RETURN a.accountNumber AS accountNumber, a.balance AS balance
+        `, { username, accountNumber: parseInt(accountNumber) });
+        
+        if (authResult.records.length === 0) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+        
+        const balance = authResult.records[0].get('balance').toNumber();
+        
+        const transactionsResult = await session.run(`
+            MATCH (a:Account {accountNumber: $accountNumber})
+            MATCH (a)-[:MADE]->(t:Transaction)
+            OPTIONAL MATCH (t)-[:OCCURRED_AT]->(l:Location)
+            RETURN t.transactionId AS id,
+                   t.amount AS amount,
+                   t.type AS type,
+                   t.timestamp AS timestamp,
+                   t.isFlagged AS isFlagged,
+                   t.merchant AS merchant,
+                   l.city AS location
+            ORDER BY t.timestamp DESC
+        `, { accountNumber: parseInt(accountNumber) });
+        
+        const transactions = transactionsResult.records.map(record => ({
+            id: record.get('id'),
+            amount: record.get('amount').toNumber(),
+            type: record.get('type'),
+            timestamp: record.get('timestamp'),
+            isFlagged: record.get('isFlagged'),
+            merchant: record.get('merchant'),
+            location: record.get('location')
+        }));
+        
+        res.json({
+            accountNumber: parseInt(accountNumber),
+            balance: balance,
+            transactions: transactions
+        });
+        
+    } catch (error) {
+        console.error('Statement error:', error);
+        res.status(500).json({ error: 'Failed to fetch statement' });
+    } finally {
+        await session.close();
+    }
+});
+
 app.listen(5000, () => {
     console.log('Server running on port 5000');
 });
