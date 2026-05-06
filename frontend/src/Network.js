@@ -44,7 +44,7 @@ const Network = () => {
       if (error.response?.status === 401) {
         navigate('/login');
       } else {
-        setError('Failed to load network data. Please check your database connection.');
+        setError('Failed to load network data. Pleasure ensure that your database instance is running ');
       }
       setLoading(false);
     }

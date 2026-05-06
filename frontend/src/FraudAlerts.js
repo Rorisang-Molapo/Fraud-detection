@@ -131,7 +131,7 @@ const FraudAlerts = () => {
       });
       navigate('/login');
     } catch (error) {
-      console.error('Logout failed:', error);
+      console.error('Logout failed because:', error);
     }
   };
 
@@ -146,7 +146,7 @@ const FraudAlerts = () => {
   if (loading) {
     return (
       <div className="loading-container">
-        <div className="loading-text">Please be patient while we load the alerts...</div>
+        <div className="loading-text">Please be patient...</div>
       </div>
     );
   }
