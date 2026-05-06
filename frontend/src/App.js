@@ -7,9 +7,11 @@ import Customer from './Customer';
 import Alerts from './Alerts';
 import Network from './Network';
 import Reports from './Reports';
+import CustomerDashboard from './CustomerDashboard';  
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userRole, setUserRole] = useState(null);  
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,8 +21,26 @@ function App() {
           withCredentials: true
         });
         setIsLoggedIn(response.data.authenticated);
+        
+        // If logged in, check if user is admin or customer
+        if (response.data.authenticated) {
+          try {
+            const dashboardRes = await axios.get('http://localhost:5000/api/customer/dashboard', {
+              withCredentials: true
+            });
+            if (dashboardRes.data.isAdmin) {
+              setUserRole('admin');
+            } else if (dashboardRes.data.isCustomer) {
+              setUserRole('customer');
+            }
+          } catch (err) {
+            
+            setUserRole('admin');
+          }
+        }
       } catch (error) {
         setIsLoggedIn(false);
+        setUserRole(null);
       } finally {
         setLoading(false);
       }
@@ -35,13 +55,40 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={<Login onLogin={() => setIsLoggedIn(true)} />} />
-        <Route path="/dashboard" element={isLoggedIn ? <Dashboard /> : <Navigate to="/login" />} />
-         <Route path="/customer" element={isLoggedIn ? <Customer /> : <Navigate to="/login" />} />
-         <Route path="/alerts" element={isLoggedIn ? <Alerts /> : <Navigate to="/login" />} />
-         <Route path="/network" element={isLoggedIn ? <Network /> : <Navigate to="/login" />} />
-         <Route path="/reports" element={isLoggedIn ? <Reports /> : <Navigate to="/login" />} />
-        <Route path="/" element={<Navigate to="/login" />} />
+        <Route path="/login" element={<Login onLogin={() => {
+          setIsLoggedIn(true);
+          // Refresh page to reload role
+          window.location.href = '/';
+        }} />} />
+        
+        {/* Admin Routes */}
+        <Route path="/dashboard" element={
+          isLoggedIn && userRole === 'admin' ? <Dashboard /> : <Navigate to="/login" />
+        } />
+        <Route path="/customer" element={
+          isLoggedIn && userRole === 'admin' ? <Customer /> : <Navigate to="/login" />
+        } />
+        <Route path="/alerts" element={
+          isLoggedIn && userRole === 'admin' ? <Alerts /> : <Navigate to="/login" />
+        } />
+        <Route path="/network" element={
+          isLoggedIn && userRole === 'admin' ? <Network /> : <Navigate to="/login" />
+        } />
+        <Route path="/reports" element={
+          isLoggedIn && userRole === 'admin' ? <Reports /> : <Navigate to="/login" />
+        } />
+        
+        {/* Customer Route */}
+        <Route path="/customer-dashboard" element={
+          isLoggedIn && userRole === 'customer' ? <CustomerDashboard /> : <Navigate to="/login" />
+        } />
+        
+        {/* Default redirect based on role */}
+        <Route path="/" element={
+          isLoggedIn ? (
+            userRole === 'admin' ? <Navigate to="/dashboard" /> : <Navigate to="/customer-dashboard" />
+          ) : <Navigate to="/login" />
+        } />
       </Routes>
     </Router>
   );
