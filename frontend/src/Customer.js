@@ -16,7 +16,7 @@ const Customer = () => {
   useEffect(() => {
     fetchAllCustomers();
   }, []);
-//fetch localhost api on port 5000
+
   const fetchAllCustomers = async () => {
     setLoading(true);
     try {
@@ -105,15 +105,9 @@ const Customer = () => {
   };
 
   const getRiskClass = (riskScore) => {
-    if (riskScore >= 70) return 'risk-critical';
-    if (riskScore >= 40) return 'risk-elevated';
+    if (riskScore >= 30) return 'risk-critical';
+    if (riskScore >= 15) return 'risk-elevated';
     return 'risk-moderate';
-  };
-
-  const getStatusClass = (status) => {
-    if (status === 'high_risk') return 'status-high-risk';
-    if (status === 'medium_risk') return 'status-medium-risk';
-    return 'status-low-risk';
   };
 
   const formatDate = (dateValue) => {
@@ -141,7 +135,6 @@ const Customer = () => {
         </svg>
       </div>
 
-      {/* Sidebar */}
       <div className="sidebar" style={{ width: sidebarOpen ? '260px' : '60px' }}>
         <div className="sidebar-header">
           {sidebarOpen && <h2 className="sidebar-title">FEDERAL 20!</h2>}
@@ -151,38 +144,19 @@ const Customer = () => {
         </div>
         
         <nav className="sidebar-nav">
-          <button 
-            onClick={() => handleNavigate('dashboard', '/dashboard')} 
-            className={`nav-item ${activePage === 'dashboard' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('dashboard', '/dashboard')} className={`nav-item ${activePage === 'dashboard' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'DASHBOARD' : 'DB'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('customer', '/customer')} 
-            className={`nav-item ${activePage === 'customer' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('customer', '/customer')} className={`nav-item ${activePage === 'customer' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'CUSTOMERS' : 'CU'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('alerts', '/alerts')} 
-            className={`nav-item ${activePage === 'alerts' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('alerts', '/alerts')} className={`nav-item ${activePage === 'alerts' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'ALERTS' : 'AL'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('network', '/network')} 
-            className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('network', '/network')} className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'NETWORK' : 'NW'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('reports', '/reports')} 
-            className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('reports', '/reports')} className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'REPORTS' : 'RP'}
           </button>
         </nav>
@@ -192,9 +166,7 @@ const Customer = () => {
         </button>
       </div>
 
-      {/* Main Content */}
       <div className="main-wrapper" style={{ marginLeft: sidebarOpen ? '260px' : '60px' }}>
-        {/* Header */}
         <div className="header">
           <div className="header-left">
             <div className="header-icon">
@@ -203,7 +175,7 @@ const Customer = () => {
               </svg>
             </div>
             <div>
-              <h1 className="header-title">FEDERAL 20! CUSTOMER</h1>
+              <h1 className="header-title">FEDERAL 20! CUSTOMER MANAGEMENT</h1>
               <div className="status-bar">
                 <span className="status-dot"></span>
                 <span className="status-text">System status: OPERATIONAL</span>
@@ -213,7 +185,6 @@ const Customer = () => {
           </div>
         </div>
 
-        {/* Search Bar */}
         <div className="search-section">
           <div className="search-container">
             <input
@@ -224,27 +195,17 @@ const Customer = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyPress={handleKeyPress}
             />
-            <button className="search-button" onClick={searchCustomers}>
-              SEARCH
-            </button>
-            <button className="reset-button" onClick={fetchAllCustomers}>
-              RESET
-            </button>
+            <button className="search-button" onClick={searchCustomers}>SEARCH</button>
+            <button className="reset-button" onClick={fetchAllCustomers}>RESET</button>
           </div>
         </div>
 
-        {error && (
-          <div className="error-message">
-            {error}
-          </div>
-        )}
+        {error && <div className="error-message">{error}</div>}
 
-        {/* Results Count */}
         <div className="results-count">
           Found {customers.length} customer{customers.length !== 1 ? 's' : ''}
         </div>
 
-        {/* Customer Table */}
         <div className="table-container">
           {loading ? (
             <div className="loading-text">LOADING CUSTOMER DATA...</div>
@@ -257,7 +218,6 @@ const Customer = () => {
                   <th>EMAIL</th>
                   <th>PHONE</th>
                   <th>RISK SCORE</th>
-                  <th>STATUS</th>
                   <th>ACTION</th>
                 </tr>
               </thead>
@@ -275,15 +235,7 @@ const Customer = () => {
                         </span>
                       </td>
                       <td>
-                        <span className={`status-badge ${getStatusClass(customer.status)}`}>
-                          {customer.status?.toUpperCase() || 'NORMAL'}
-                        </span>
-                      </td>
-                      <td>
-                        <button
-                          className="view-button"
-                          onClick={() => viewCustomerDetails(customer.id)}
-                        >
+                        <button className="view-button" onClick={() => viewCustomerDetails(customer.id)}>
                           VIEW DETAILS
                         </button>
                       </td>
@@ -291,9 +243,7 @@ const Customer = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="7" className="no-data">
-                      No customers found
-                    </td>
+                    <td colSpan="6" className="no-data">No customers found</td>
                   </tr>
                 )}
               </tbody>
@@ -301,7 +251,6 @@ const Customer = () => {
           )}
         </div>
 
-        {/* Customer Details Modal */}
         {selectedCustomer && (
           <div className="modal-overlay" onClick={closeDetails}>
             <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -333,15 +282,10 @@ const Customer = () => {
                   </span>
                 </div>
                 <div className="detail-row">
-                  <span className="detail-label">Status:</span>
-                  <span className="detail-value">{selectedCustomer.status?.toUpperCase() || 'NORMAL'}</span>
-                </div>
-                <div className="detail-row">
                   <span className="detail-label">Join Date:</span>
                   <span className="detail-value">{formatDate(selectedCustomer.joinDate)}</span>
                 </div>
 
-                {/* Accounts Section */}
                 <div className="section-title">
                   <h3>ASSOCIATED ACCOUNTS</h3>
                 </div>
@@ -363,7 +307,7 @@ const Customer = () => {
                           <td>${account.balance?.toLocaleString()}</td>
                           <td>
                             <span className={`status-badge ${account.isFlagged ? 'status-flagged' : 'status-active'}`}>
-                              {account.isFlagged ? 'FLAGGED' : (account.status?.toUpperCase() || 'ACTIVE')}
+                              {account.isFlagged ? 'FLAGGED' : 'ACTIVE'}
                             </span>
                           </td>
                         </tr>
@@ -374,7 +318,6 @@ const Customer = () => {
                   <div className="no-data">No accounts associated</div>
                 )}
 
-                {/* Transactions Section */}
                 <div className="section-title">
                   <h3>RECENT TRANSACTIONS</h3>
                 </div>
