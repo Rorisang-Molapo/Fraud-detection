@@ -2,7 +2,7 @@
 
 > A simple fraud detection system built using React and Neo4j graph database
 
-**Developers:** Isaac xv¡ & just_ranks xv¡ & Matlali xv¡ BlackBeard1-0-1 xv¡ <br/>
+**Developers:** Isaac xv¡ & just_ranks xv¡ & Matlali xv¡ & BlackBeard1-0-1 xv¡ <br/>
 **Course:** Database Systems
 
 ---
@@ -28,7 +28,7 @@ This project is a fraud detection and risk monitoring system that uses a graph d
 ## CodeQL Status
 [![CodeQL Advanced](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml/badge.svg)](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml)
 
-## Below is the installation guide document, to provide user on how to use the system through installation of dependencies
+## Below is the installation guide document, to provide user on how to use the system through installation of dependencies.
 
 ### Step 1: Clone the Repository
 
