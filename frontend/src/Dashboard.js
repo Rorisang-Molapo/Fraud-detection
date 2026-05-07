@@ -22,10 +22,11 @@ const Dashboard = () => {
     medium: 0,
     low: 0
   });
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [refreshTrigger]);
 
   const fetchDashboardData = async () => {
     try {
@@ -34,6 +35,10 @@ const Dashboard = () => {
         axios.get('http://localhost:5000/api/dashboard/high-risk-alerts', { withCredentials: true }),
         axios.get('http://localhost:5000/api/dashboard/risk-distribution', { withCredentials: true })
       ]);
+
+      console.log('Dashboard Stats:', statsRes.data);
+      console.log('High Risk Alerts:', alertsRes.data);
+      console.log('Risk Distribution:', riskRes.data);
 
       setStats(statsRes.data);
       setHighRiskAlerts(alertsRes.data);
@@ -46,6 +51,11 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = () => {
+    setLoading(true);
+    setRefreshTrigger(prev => prev + 1);
   };
 
   const handleLogout = async () => {
@@ -106,7 +116,6 @@ const Dashboard = () => {
         </svg>
       </div>
 
-      {/* Sidebar */}
       <div className="sidebar" style={{ width: sidebarOpen ? '260px' : '60px' }}>
         <div className="sidebar-header">
           {sidebarOpen && <h2 className="sidebar-title">FEDERAL 20!</h2>}
@@ -116,38 +125,19 @@ const Dashboard = () => {
         </div>
         
         <nav className="sidebar-nav">
-          <button 
-            onClick={() => handleNavigate('dashboard', '/dashboard')} 
-            className={`nav-item ${activePage === 'dashboard' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('dashboard', '/dashboard')} className={`nav-item ${activePage === 'dashboard' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'DASHBOARD' : 'DB'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('customer', '/customer')} 
-            className={`nav-item ${activePage === 'customer' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('customer', '/customer')} className={`nav-item ${activePage === 'customer' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'CUSTOMERS' : 'CU'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('alerts', '/alerts')} 
-            className={`nav-item ${activePage === 'alerts' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('alerts', '/alerts')} className={`nav-item ${activePage === 'alerts' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'ALERTS' : 'AL'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('network', '/network')} 
-            className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('network', '/network')} className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'NETWORK' : 'NW'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('reports', '/reports')} 
-            className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('reports', '/reports')} className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'REPORTS' : 'RP'}
           </button>
         </nav>
@@ -157,9 +147,7 @@ const Dashboard = () => {
         </button>
       </div>
 
-      {/* Main Content */}
       <div className="main-wrapper" style={{ marginLeft: sidebarOpen ? '260px' : '60px' }}>
-        {/* Header */}
         <div className="header">
           <div className="header-left">
             <div className="header-icon">
@@ -176,14 +164,27 @@ const Dashboard = () => {
               </div>
             </div>
           </div>
+          <button onClick={handleRefresh} style={{
+            backgroundColor: '#1e293b',
+            border: '1px solid #3b82f6',
+            color: '#60a5fa',
+            padding: '8px 16px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontFamily: 'Courier New, monospace'
+          }}>REFRESH</button>
         </div>
 
-        {/* Stats Grid */}
         <div className="stats-grid">
           <div className="stat-card">
             <div className="stat-label">TOTAL CUSTOMERS</div>
             <div className="stat-value">{stats.totalCustomers.toLocaleString()}</div>
             <div className="stat-trend">Active accounts</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">TOTAL TRANSACTIONS</div>
+            <div className="stat-value">{stats.totalTransactions.toLocaleString()}</div>
+            <div className="stat-trend">All time</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">FLAGGED FOR REVIEW</div>
@@ -193,25 +194,14 @@ const Dashboard = () => {
           <div className="stat-card">
             <div className="stat-label">HIGH RISK CUSTOMERS</div>
             <div className="stat-value">{stats.highRiskCustomers}</div>
-            <div className="stat-danger">Immediate attention needed</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">ACTIVE THREATS</div>
-            <div className="stat-value">{stats.highRiskCustomers}</div>
-            <div className="stat-danger">High-risk concurrent vectors</div>
+            <div className="stat-danger">Risk score ≥ 15</div>
           </div>
         </div>
 
-        {/* Second Row Stats */}
         <div className="stats-grid">
           <div className="stat-card">
-            <div className="stat-label">TOTAL TRANSACTIONS</div>
-            <div className="stat-value">{stats.totalTransactions.toLocaleString()}</div>
-            <div className="stat-trend">All time</div>
-          </div>
-          <div className="stat-card">
             <div className="stat-label">TOTAL TRANSFER VOLUME</div>
-            <div className="stat-value">M{stats.totalTransferAmount.toLocaleString()}</div>
+            <div className="stat-value">${stats.totalTransferAmount.toLocaleString()}</div>
             <div className="stat-trend">Inter-account transfers</div>
           </div>
           <div className="stat-card">
@@ -220,15 +210,18 @@ const Dashboard = () => {
             <div className="stat-trend">Weighted average</div>
           </div>
           <div className="stat-card">
+            <div className="stat-label">ACTIVE THREATS</div>
+            <div className="stat-value">{stats.highRiskCustomers}</div>
+            <div className="stat-danger">High-risk customers</div>
+          </div>
+          <div className="stat-card">
             <div className="stat-label">GEO-IP CONTEXT</div>
             <div className="stat-value">ACTIVE</div>
             <div className="stat-trend">Monitoring active</div>
           </div>
         </div>
 
-        {/* Main Content Area */}
         <div className="main-content">
-          {/* Left Column - Risk Distribution */}
           <div className="left-column">
             <div className="card">
               <div className="card-header">
@@ -282,7 +275,6 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Right Column - Recent High Risk Alerts */}
           <div className="right-column">
             <div className="card">
               <div className="card-header">
@@ -294,6 +286,7 @@ const Dashboard = () => {
                   <thead>
                     <tr>
                       <th>Customer ID</th>
+                      <th>Name</th>
                       <th>Risk Level</th>
                       <th>Risk Score</th>
                     </tr>
@@ -303,6 +296,7 @@ const Dashboard = () => {
                       highRiskAlerts.map((alert, index) => (
                         <tr key={index}>
                           <td>{alert.id}</td>
+                          <td>{alert.name}</td>
                           <td style={{ color: getRiskColor(alert.riskScore), fontWeight: 'bold' }}>
                             {getRiskLevel(alert.riskScore)}
                           </td>
@@ -311,7 +305,7 @@ const Dashboard = () => {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="3" className="no-data">No high-risk alerts</td>
+                        <td colSpan="4" className="no-data">No high-risk customers</td>
                       </tr>
                     )}
                   </tbody>
