@@ -52,7 +52,7 @@ const Network = () => {
             id: String(cleanId(node.id))
           }));
         
-        // Deduplicate nodes (critical: removes duplicate IDs that break vis-network)
+        // CRITICAL FIX: Remove duplicate node IDs (vis-network fails if duplicate ids exist)
         const uniqueNodesMap = new Map();
         limitedData.nodes.forEach(node => {
           if (!uniqueNodesMap.has(node.id)) {

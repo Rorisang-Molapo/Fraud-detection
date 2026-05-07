@@ -348,9 +348,11 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
                    [node IN nodes(path) | node.accountNumber] AS path,
                    REDUCE(s = 0, r IN relationships(path) | s + r.amount) AS totalAmount LIMIT 5
         `);
-        pathResult.records.forEach(record => {
+        // FIX: make each alert ID unique to avoid React duplicate key warnings
+        pathResult.records.forEach((record, idx) => {
+            const uniqueId = `LAUNDERING_PATH_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 8)}`;
             alerts.push({
-                id: 'LAUNDERING_PATH_' + Date.now(),
+                id: uniqueId,
                 type: 'CIRCULAR_TRANSACTION',
                 severity: 'HIGH',
                 message: `Suspicious money flow detected: ${record.get('path').join(' → ')} (Total: $${toNativeNumber(record.get('totalAmount')).toFixed(2)})`,
