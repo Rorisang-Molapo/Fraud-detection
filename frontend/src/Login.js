@@ -25,7 +25,7 @@ const Login = ({ onLogin }) => {
         // Call onLogin to update App state
         onLogin();
         
-        // Redirect based on role returned from server
+        /* Redirect based on role returned from server, as a form of security and privileges granting system */
         if (response.data.role === 'admin') {
           window.location.href = '/dashboard';
         } else {
