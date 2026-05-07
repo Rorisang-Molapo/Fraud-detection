@@ -206,7 +206,7 @@ const CustomerDashboard = () => {
                                         <div className="card-info">
                                             <div className="card-type">{acc.type?.toUpperCase()} Account</div>
                                             <div className="card-number">{formatAccountNumber(acc.accountNumber)}</div>
-                                            <div className="card-balance">${acc.balance?.toLocaleString()}</div>
+                                            <div className="card-balance">M{acc.balance?.toLocaleString()}</div>
                                             {acc.isFlagged && <span className="flagged-tag">FLAGGED</span>}
                                         </div>
                                     </div>
@@ -216,7 +216,7 @@ const CustomerDashboard = () => {
                             {/* Total Balance */}
                             <div className="total-balance">
                                 <h3>Total Balance</h3>
-                                <div className="total-amount">${data.totalBalance?.toLocaleString()}</div>
+                                <div className="total-amount">M{data.totalBalance?.toLocaleString()}</div>
                             </div>
 
                             {/* Recent Activity */}
@@ -233,7 +233,7 @@ const CustomerDashboard = () => {
                                             <div className="activity-date">{formatDate(tx.timestamp)}</div>
                                             {tx.merchant && <div className="activity-merchant">{tx.merchant}</div>}
                                         </div>
-                                        <div className="activity-amount">-${tx.amount?.toLocaleString()}</div>
+                                        <div className="activity-amount">-M{tx.amount?.toLocaleString()}</div>
                                     </div>
                                 ))}
                             </div>
@@ -318,7 +318,7 @@ const CustomerDashboard = () => {
                             </form>
                             
                             <div className="warning-note">
-                                Transfers over $10,000 will be flagged for security review.
+                                Transfers over M10,000 will be flagged for security review.
                             </div>
                         </div>
                     )}
