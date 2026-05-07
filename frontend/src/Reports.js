@@ -213,9 +213,11 @@ const Reports = () => {
                   <table className="reports-table">
                     <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Risk Score</th><th>Status</th></tr></thead>
                     <tbody>
-                      {customers.map(customer => (
-                        <tr key={toNumber(customer.id)}>
-                          <td>{toNumber(customer.id)}</td><td>{customer.name}</td><td>{customer.email}</td>
+                      {customers.map((customer, index) => (
+                        <tr key={customer.id ? toNumber(customer.id) : `temp-customer-${index}`}>
+                          <td>{toNumber(customer.id)}</td>
+                          <td>{customer.name}</td>
+                          <td>{customer.email}</td>
                           <td className={getRiskClass(customer.riskScore)}>{toNumber(customer.riskScore)}</td>
                           <td>{(customer.status || 'normal').toUpperCase()}</td>
                         </tr>
@@ -235,9 +237,10 @@ const Reports = () => {
                   <table className="reports-table">
                     <thead><tr><th>Transaction ID</th><th>Account</th><th>Amount</th><th>Type</th><th>Reason</th><th>Date</th></tr></thead>
                     <tbody>
-                      {flaggedTransactions.map(transaction => (
-                        <tr key={toNumber(transaction.id)}>
-                          <td><code>{toNumber(transaction.id)}</code></td><td>{toNumber(transaction.accountNumber)}</td>
+                      {flaggedTransactions.map((transaction, index) => (
+                        <tr key={transaction.id ? toNumber(transaction.id) : `temp-flagged-${index}`}>
+                          <td><code>{toNumber(transaction.id)}</code></td>
+                          <td>{toNumber(transaction.accountNumber)}</td>
                           <td style={{ color: '#ef4444', fontWeight: 'bold' }}>${toNumber(transaction.amount).toLocaleString()}</td>
                           <td>{transaction.type?.toUpperCase() || 'TRANSFER'}</td>
                           <td><span className={`severity-badge ${getSeverityBadge(transaction.reason)}`}>{transaction.reason}</span></td>
@@ -257,9 +260,10 @@ const Reports = () => {
                   <table className="reports-table">
                     <thead><tr><th>ID</th><th>Account</th><th>Amount</th><th>Type</th><th>Status</th><th>Date</th></tr></thead>
                     <tbody>
-                      {allTransactions.slice(0, 10).map(transaction => (
-                        <tr key={toNumber(transaction.id)}>
-                          <td><code>{toNumber(transaction.id)}</code></td><td>{toNumber(transaction.accountNumber)}</td>
+                      {allTransactions.slice(0, 10).map((transaction, index) => (
+                        <tr key={transaction.id ? toNumber(transaction.id) : `temp-trans-${index}`}>
+                          <td><code>{toNumber(transaction.id)}</code></td>
+                          <td>{toNumber(transaction.accountNumber)}</td>
                           <td>${toNumber(transaction.amount).toLocaleString()}</td>
                           <td>{transaction.type?.toUpperCase() || 'TRANSFER'}</td>
                           <td><span className={transaction.isFlagged ? 'status-flagged' : 'status-normal'}>{transaction.isFlagged ? 'FLAGGED' : 'NORMAL'}</span></td>
