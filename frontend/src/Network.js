@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { Network as VisNetwork } from 'vis-network';
@@ -13,7 +13,6 @@ const Network = () => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [filter, setFilter] = useState('ALL');
   const [error, setError] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
   const [maxTransactions, setMaxTransactions] = useState(50);
   const [maxTransferEdges, setMaxTransferEdges] = useState(100);
   const containerRef = useRef(null);
@@ -45,13 +44,22 @@ const Network = () => {
       if (response.data && response.data.nodes && response.data.edges) {
         let limitedData = limitGraphData(response.data, maxTransactions, maxTransferEdges);
         
-        // Ensure every node has a string id
+        // Ensure every node has a string id AND deduplicate by id
         limitedData.nodes = limitedData.nodes
           .filter(n => n.id != null && n.id !== '')
           .map(node => ({
             ...node,
             id: String(cleanId(node.id))
           }));
+        
+        // Deduplicate nodes (critical: removes duplicate IDs that break vis-network)
+        const uniqueNodesMap = new Map();
+        limitedData.nodes.forEach(node => {
+          if (!uniqueNodesMap.has(node.id)) {
+            uniqueNodesMap.set(node.id, node);
+          }
+        });
+        limitedData.nodes = Array.from(uniqueNodesMap.values());
         
         const validIds = new Set(limitedData.nodes.map(n => n.id));
         limitedData.edges = limitedData.edges
@@ -85,9 +93,6 @@ const Network = () => {
     const customers = data.nodes.filter(n => n.type === 'Customer');
     const accounts = data.nodes.filter(n => n.type === 'Account');
     const transactions = data.nodes.filter(n => n.type === 'Transaction').slice(0, maxTrans);
-    const devices = data.nodes.filter(n => n.type === 'Device');
-    const ipAddresses = data.nodes.filter(n => n.type === 'IPAddress');
-    const locations = data.nodes.filter(n => n.type === 'Location');
     
     const transactionIds = new Set(transactions.map(t => t.id));
     
@@ -164,9 +169,7 @@ const Network = () => {
       if (isFlagged) return { background: '#a78bfa', border: '#5b21b6' };
       return { background: '#a78bfa', border: '#5b21b6' };
     }
-    if (type === 'Device') {
-      return { background: '#f97316', border: '#7c2d12' };
-    }
+    if (type === 'Device') return { background: '#f97316', border: '#7c2d12' };
     if (type === 'IPAddress') {
       if (isFlagged) return { background: '#ef4444', border: '#7f1a1a' };
       return { background: '#06b6d4', border: '#164e63' };
@@ -241,6 +244,9 @@ const Network = () => {
       });
 
     const visNodeIds = new Set(visNodes.map(n => n.id));
+    
+    // Generate truly unique edge IDs
+    let edgeCounter = 0;
     const visEdges = edgesToShow
       .filter(edge => visNodeIds.has(edge.source) && visNodeIds.has(edge.target))
       .map((edge, idx) => {
@@ -256,7 +262,8 @@ const Network = () => {
         if (edge.relationship === 'USED' || edge.relationship === 'USES_DEVICE') color = '#f97316';
         if (edge.relationship === 'FROM_IP') color = '#06b6d4';
         if (edge.relationship === 'OCCURRED_AT') color = '#ec489a';
-        const uniqueId = `edge_${idx}_${Date.now()}`;
+        
+        const uniqueId = `edge_${Date.now()}_${++edgeCounter}_${Math.random().toString(36).substr(2, 6)}`;
         return {
           id: uniqueId,
           from: edge.source,
