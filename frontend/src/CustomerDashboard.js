@@ -8,7 +8,7 @@ const CustomerDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
-    // const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [sidebarOpen, setSidebarOpen] = useState(true);
     const [transferForm, setTransferForm] = useState({
         fromAccount: '',
         toAccount: '',
