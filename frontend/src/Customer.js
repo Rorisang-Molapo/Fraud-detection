@@ -16,7 +16,7 @@ const Customer = () => {
   useEffect(() => {
     fetchAllCustomers();
   }, []);
-
+//fetch localhost api on port 5000
   const fetchAllCustomers = async () => {
     setLoading(true);
     try {
