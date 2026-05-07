@@ -22,6 +22,18 @@ const driver = neo4j.driver(
     process.env.NEO4J_URI,
     neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD)
 );
+// fixing errors
+function toNativeNumber(value) {
+    if (value == null) return 0;
+
+    // Neo4j Integer object
+    if (typeof value === 'object' && typeof value.toNumber === 'function') {
+        return value.toNumber();
+    }
+
+    // Already normal JS number
+    return Number(value);
+}
 
 // Auth middleware
 const requireAuth = (req, res, next) => {
@@ -102,12 +114,12 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
         `);
         const record = result.records[0];
         res.json({
-            totalCustomers: record.get('totalCustomers').toNumber(),
-            totalTransactions: record.get('totalTransactions').toNumber(),
-            flaggedTransactions: record.get('flaggedTransactions').toNumber(),
-            highRiskCustomers: record.get('highRiskCustomers').toNumber(),
-            totalTransferAmount: record.get('totalTransferAmount').toNumber(),
-            avgRiskScore: parseFloat(record.get('avgRiskScore').toFixed(1))
+            totalCustomers: toNativeNumber(record.get('totalCustomers')),
+            totalTransactions: toNativeNumber(record.get('totalTransactions')),
+            flaggedTransactions: toNativeNumber(record.get('flaggedTransactions')),
+            highRiskCustomers: toNativeNumber(record.get('highRiskCustomers')),
+            totalTransferAmount: toNativeNumber(record.get('totalTransferAmount')),
+            avgRiskScore: parseFloat(toNativeNumber(record.get('avgRiskScore')).toFixed(1))
         });
     } catch (error) {
         console.error('Stats error:', error);
@@ -127,7 +139,7 @@ app.get('/api/dashboard/high-risk-alerts', requireAuth, async (req, res) => {
         const alerts = result.records.map(record => ({
             id: record.get('id'),
             name: record.get('name'),
-            riskScore: record.get('riskScore').toNumber(),
+            riskScore: toNativeNumber(record.get('riskScore')),
             status: record.get('status')
         }));
         res.json(alerts);
@@ -150,9 +162,9 @@ app.get('/api/dashboard/risk-distribution', requireAuth, async (req, res) => {
         `);
         const record = result.records[0];
         res.json({
-            high: record.get('high').toNumber(),
-            medium: record.get('medium').toNumber(),
-            low: record.get('low').toNumber()
+            high: toNativeNumber(record.get('high')),
+            medium: toNativeNumber(record.get('medium')),
+            low: toNativeNumber(record.get('low'))
         });
     } catch (error) {
         console.error('Risk distribution error:', error);
@@ -176,7 +188,7 @@ app.get('/api/customers', requireAuth, async (req, res) => {
             name: record.get('name'),
             email: record.get('email'),
             phone: record.get('phone'),
-            riskScore: record.get('riskScore').toNumber(),
+            riskScore: toNativeNumber(record.get('riskScore')),
             status: record.get('status'),
             joinDate: record.get('joinDate')
         }));
@@ -203,7 +215,7 @@ app.get('/api/customers/search', requireAuth, async (req, res) => {
             name: record.get('name'),
             email: record.get('email'),
             phone: record.get('phone'),
-            riskScore: record.get('riskScore').toNumber(),
+            riskScore: toNativeNumber(record.get('riskScore')),
             status: record.get('status'),
             joinDate: record.get('joinDate')
         }));
@@ -232,9 +244,9 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
             RETURN a.accountNumber AS accountNumber, a.type AS type, a.balance AS balance, a.status AS status, a.isFlagged AS isFlagged
         `, { id });
         const accounts = accountsResult.records.map(record => ({
-            accountNumber: record.get('accountNumber').toNumber(),
+            accountNumber: toNativeNumber(record.get('accountNumber')),
             type: record.get('type'),
-            balance: record.get('balance').toNumber(),
+            balance: toNativeNumber(record.get('balance')),
             status: record.get('status'),
             isFlagged: record.get('isFlagged')
         }));
@@ -246,7 +258,7 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
         `, { id });
         const transactions = transactionsResult.records.map(record => ({
             transactionId: record.get('transactionId'),
-            amount: record.get('amount').toNumber(),
+            amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
             timestamp: record.get('timestamp'),
             isFlagged: record.get('isFlagged')
@@ -257,7 +269,7 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
             name: customer.get('name'),
             email: customer.get('email'),
             phone: customer.get('phone'),
-            riskScore: customer.get('riskScore').toNumber(),
+            riskScore: toNativeNumber(customer.get('riskScore')),
             status: customer.get('status'),
             joinDate: customer.get('joinDate'),
             accounts, transactions
@@ -287,10 +299,10 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
                 id: 'FLAGGED_' + record.get('transactionId'),
                 type: 'FLAGGED_TRANSACTION',
                 severity: 'HIGH',
-                message: `Transaction of $${record.get('amount').toNumber().toFixed(2)} by ${record.get('customerName')} flagged: ${record.get('flagReason') || 'Manual review required'}`,
+                message: `Transaction of $${toNativeNumber(record.get('amount')).toFixed(2)} by ${record.get('customerName')} flagged: ${record.get('flagReason') || 'Manual review required'}`,
                 customer: record.get('customerName'),
                 timestamp: record.get('timestamp') ? record.get('timestamp').toString() : new Date().toISOString(),
-                amount: record.get('amount').toNumber()
+                amount: toNativeNumber(record.get('amount'))
             });
         });
 
@@ -299,7 +311,7 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
             RETURN c.name AS name, c.id AS id, c.riskScore AS riskScore, c.status AS status ORDER BY c.riskScore DESC
         `);
         riskCustomerResult.records.forEach(record => {
-            const riskScore = record.get('riskScore').toNumber();
+            const riskScore = toNativeNumber(record.get('riskScore'));
             let severity = 'MEDIUM';
             if (riskScore >= 30) severity = 'CRITICAL';
             else if (riskScore >= 15) severity = 'HIGH';
@@ -325,10 +337,10 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
                 id: 'LAUNDERING_PATH_' + Date.now(),
                 type: 'CIRCULAR_TRANSACTION',
                 severity: 'HIGH',
-                message: `Suspicious money flow detected: ${record.get('path').join(' → ')} (Total: $${record.get('totalAmount').toNumber().toFixed(2)})`,
+                message: `Suspicious money flow detected: ${record.get('path').join(' → ')} (Total: $${toNativeNumber(record.get('totalAmount')).toFixed(2)})`,
                 customers: record.get('path'),
                 timestamp: new Date().toISOString(),
-                amount: record.get('totalAmount').toNumber()
+                amount: toNativeNumber(record.get('totalAmount'))
             });
         });
 
@@ -360,9 +372,9 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
             id: record.get('id'),
             type: record.get('type'),
             label: record.get('label'),
-            riskScore: record.get('riskScore') ? record.get('riskScore').toNumber() : null,
+            riskScore: record.get('riskScore') ? toNativeNumber(record.get('riskScore')) : null,
             isFlagged: record.get('isFlagged') || false,
-            amount: record.get('amount') ? record.get('amount').toNumber() : null,
+            amount: record.get('amount') ? toNativeNumber(record.get('amount')) : null,
             status: record.get('status')
         }));
 
@@ -376,7 +388,7 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
             source: record.get('source'),
             target: record.get('target'),
             relationship: record.get('relationship'),
-            amount: record.get('amount') ? record.get('amount').toNumber() : null
+            amount: record.get('amount') ? toNativeNumber(record.get('amount')) : null
         }));
         res.json({ nodes, edges });
     } catch (error) {
@@ -410,11 +422,11 @@ app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
         
         const flaggedTransactions = result.records.map(record => ({
             id: record.get('id'),
-            amount: record.get('amount').toNumber(),
+            amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
             timestamp: record.get('timestamp'),
             reason: record.get('reason') || 'Manual review required',
-            accountNumber: record.get('accountNumber') ? record.get('accountNumber').toNumber() : 'N/A',
+            accountNumber: record.get('accountNumber') ? toNativeNumber(record.get('accountNumber')) : 'N/A',
             location: record.get('location') || 'Unknown',
             ipAddress: record.get('ipAddress') || 'Unknown',
             usedVPN: record.get('usedVPN') || false
@@ -448,11 +460,11 @@ app.get('/api/transactions/all', requireAuth, async (req, res) => {
         
         const transactions = result.records.map(record => ({
             id: record.get('id'),
-            amount: record.get('amount').toNumber(),
+            amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
             timestamp: record.get('timestamp'),
             isFlagged: record.get('isFlagged'),
-            accountNumber: record.get('accountNumber').toNumber(),
+            accountNumber: toNativeNumber(record.get('accountNumber')),
             location: record.get('location') || 'Unknown'
         }));
         
@@ -478,14 +490,14 @@ app.get('/api/system/summary', requireAuth, async (req, res) => {
         const flaggedTransactionResult = await session.run(`MATCH (t:Transaction {isFlagged: true}) RETURN COUNT(t) AS count`);
         
         res.json({
-            totalCustomers: customerResult.records[0].get('count').toNumber(),
-            totalAccounts: accountResult.records[0].get('count').toNumber(),
-            flaggedAccounts: flaggedAccountResult.records[0].get('count').toNumber(),
-            totalDevices: deviceResult.records[0].get('count').toNumber(),
-            totalIPs: ipResult.records[0].get('count').toNumber(),
-            totalLocations: locationResult.records[0].get('count').toNumber(),
-            totalTransactions: transactionResult.records[0].get('count').toNumber(),
-            flaggedTransactions: flaggedTransactionResult.records[0].get('count').toNumber()
+            totalCustomers: toNativeNumber(customerResult.records[0].get('count')),
+            totalAccounts: toNativeNumber(accountResult.records[0].get('count')),
+            flaggedAccounts: toNativeNumber(flaggedAccountResult.records[0].get('count')),
+            totalDevices: toNativeNumber(deviceResult.records[0].get('count')),
+            totalIPs: toNativeNumber(ipResult.records[0].get('count')),
+            totalLocations: toNativeNumber(locationResult.records[0].get('count')),
+            totalTransactions: toNativeNumber(transactionResult.records[0].get('count')),
+            flaggedTransactions: toNativeNumber(flaggedTransactionResult.records[0].get('count'))
         });
     } catch (error) {
         console.error('System summary error:', error);
@@ -512,11 +524,11 @@ app.get('/api/reports/risk-distribution', requireAuth, async (req, res) => {
         `);
         const record = result.records[0];
         res.json({
-            high: { count: record.get('highCount').toNumber(), avgScore: parseFloat((record.get('highAvg') || 0).toFixed(1)) },
-            medium: { count: record.get('mediumCount').toNumber(), avgScore: parseFloat((record.get('mediumAvg') || 0).toFixed(1)) },
-            low: { count: record.get('lowCount').toNumber(), avgScore: parseFloat((record.get('lowAvg') || 0).toFixed(1)) },
-            totalThreats: record.get('totalThreats').toNumber(),
-            overallAvg: parseFloat((record.get('overallAvg') || 0).toFixed(1))
+            high: { count: toNativeNumber(record.get('highCount')), avgScore: parseFloat((toNativeNumber(record.get('highAvg')) || 0).toFixed(1)) },
+            medium: { count: toNativeNumber(record.get('mediumCount')), avgScore: parseFloat((toNativeNumber(record.get('mediumAvg')) || 0).toFixed(1)) },
+            low: { count: toNativeNumber(record.get('lowCount')), avgScore: parseFloat((toNativeNumber(record.get('lowAvg')) || 0).toFixed(1)) },
+            totalThreats: toNativeNumber(record.get('totalThreats')),
+            overallAvg: parseFloat((toNativeNumber(record.get('overallAvg')) || 0).toFixed(1))
         });
     } catch (error) {
         console.error('Risk distribution report error:', error);
@@ -548,8 +560,8 @@ app.get('/api/reports/money-mules', requireAuth, async (req, res) => {
         const mules = result.records.map(record => ({
             entityId: record.get('entityId'),
             velocity: record.get('velocity'),
-            aggregateVol: record.get('aggregateVol').toNumber(),
-            riskScore: Math.min(Math.floor(record.get('riskScore')), 100)
+            aggregateVol: toNativeNumber(record.get('aggregateVol')),
+            riskScore: Math.min(Math.floor(toNativeNumber(record.get('riskScore'))), 100)
         }));
         res.json(mules);
     } catch (error) {
@@ -582,8 +594,8 @@ app.get('/api/reports/impossible-travel', requireAuth, async (req, res) => {
             toLocation: record.get('toLocation'),
             fromTime: record.get('fromTime').split('T')[1]?.substring(0, 8) || '00:00:00',
             toTime: record.get('toTime').split('T')[1]?.substring(0, 8) || '00:00:00',
-            velocity: Math.floor(8000 / Math.max(record.get('hoursDiff'), 1)),
-            riskLevel: record.get('hoursDiff') <= 1 ? 'CRITICAL' : 'HIGH'
+            velocity: Math.floor(8000 / Math.max(toNativeNumber(record.get('hoursDiff')), 1)),
+            riskLevel: toNativeNumber(record.get('hoursDiff')) <= 1 ? 'CRITICAL' : 'HIGH'
         }));
         res.json(travels);
     } catch (error) {
@@ -604,8 +616,8 @@ app.get('/api/reports/vpn-analysis', requireAuth, async (req, res) => {
                    COUNT(DISTINCT ip.address) AS vpnIPs
         `);
         const totalTransResult = await session.run(`MATCH (t:Transaction) RETURN COUNT(t) AS total`);
-        const totalTrans = totalTransResult.records[0].get('total').toNumber() || 1;
-        const vpnTrans = result.records[0].get('vpnTransactions').toNumber();
+        const totalTrans = toNativeNumber(totalTransResult.records[0].get('total')) || 1;
+        const vpnTrans = toNativeNumber(result.records[0].get('vpnTransactions'));
         
         res.json({
             totalVolume: Math.min(Math.floor((vpnTrans / totalTrans) * 100), 100),
@@ -657,9 +669,9 @@ app.get('/api/transfers', requireAuth, async (req, res) => {
             ORDER BY r.timestamp DESC
         `);
         const transfers = result.records.map(record => ({
-            fromAccount: record.get('fromAccount').toNumber(),
-            toAccount: record.get('toAccount').toNumber(),
-            amount: record.get('amount').toNumber(),
+            fromAccount: toNativeNumber(record.get('fromAccount')),
+            toAccount: toNativeNumber(record.get('toAccount')),
+            amount: toNativeNumber(record.get('amount')),
             timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             reference: record.get('reference')
         }));
@@ -715,9 +727,9 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         const accounts = record.get('accounts')
             .filter(acc => acc.accountNumber !== null)
             .map(acc => ({
-                accountNumber: acc.accountNumber ? acc.accountNumber.toNumber() : null,
+                accountNumber: toNativeNumber(acc.accountNumber),
                 type: acc.type,
-                balance: acc.balance ? acc.balance.toNumber() : 0,
+                balance: toNativeNumber(acc.balance),
                 status: acc.status,
                 isFlagged: acc.isFlagged
             }));
@@ -741,7 +753,7 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         
         const transactions = transactionsResult.records.map(record => ({
             id: record.get('id'),
-            amount: record.get('amount').toNumber(),
+            amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
             timestamp: record.get('timestamp'),
             isFlagged: record.get('isFlagged'),
@@ -764,10 +776,10 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         `, { username });
         
         const incomingTransfers = incomingResult.records.map(record => ({
-            amount: record.get('amount') ? record.get('amount').toNumber() : 0,
+            amount: record.get('amount') ? toNativeNumber(record.get('amount')) : 0,
             timestamp: record.get('timestamp'),
             reference: record.get('reference'),
-            fromAccount: record.get('fromAccount') ? record.get('fromAccount').toNumber() : null,
+            fromAccount: record.get('fromAccount') ? toNativeNumber(record.get('fromAccount')) : null,
             fromName: record.get('fromName')
         }));
         
@@ -785,10 +797,10 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         `, { username });
         
         const outgoingTransfers = outgoingResult.records.map(record => ({
-            amount: record.get('amount') ? record.get('amount').toNumber() : 0,
+            amount: record.get('amount') ? toNativeNumber(record.get('amount')) : 0,
             timestamp: record.get('timestamp'),
             reference: record.get('reference'),
-            toAccount: record.get('toAccount') ? record.get('toAccount').toNumber() : null,
+            toAccount: record.get('toAccount') ? toNativeNumber(record.get('toAccount')) : null,
             toName: record.get('toName')
         }));
         
@@ -796,7 +808,7 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             isCustomer: true,
             customerId: record.get('customerId'),
             name: record.get('name'),
-            riskScore: record.get('riskScore') ? record.get('riskScore').toNumber() : 0,
+            riskScore: record.get('riskScore') ? toNativeNumber(record.get('riskScore')) : 0,
             status: record.get('status'),
             joinDate: record.get('joinDate'),
             accounts: accounts,
@@ -833,7 +845,7 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
             return res.status(403).json({ error: 'You do not own this account' });
         }
         
-        const currentBalance = authResult.records[0].get('balance').toNumber();
+        const currentBalance = toNativeNumber(authResult.records[0].get('balance'));
         const accountStatus = authResult.records[0].get('status');
         
         if (accountStatus === 'frozen') {
@@ -908,7 +920,7 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
             res.json({
                 success: true,
                 message: `Successfully transferred $${amount.toLocaleString()} to account ${toAccountNumber}`,
-                newBalance: newBalanceResult.records[0].get('newBalance').toNumber(),
+                newBalance: toNativeNumber(newBalanceResult.records[0].get('newBalance')),
                 isFlagged: isFlagged
             });
             
@@ -942,7 +954,7 @@ app.get('/api/customer/search-account', requireAuth, async (req, res) => {
         `, { q });
         
         const accounts = result.records.map(record => ({
-            accountNumber: record.get('accountNumber').toNumber(),
+            accountNumber: toNativeNumber(record.get('accountNumber')),
             type: record.get('type'),
             status: record.get('status'),
             ownerName: record.get('ownerName') || 'Unknown'
