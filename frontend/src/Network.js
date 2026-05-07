@@ -177,6 +177,8 @@ const Network = () => {
         width = 3;
       }
 
+
+
       return {
         id: `${edge.source}_${edge.target}_${edge.relationship}`,
         from: edge.source,
@@ -203,6 +205,7 @@ const Network = () => {
           }
         }
       };
+
     });
 
     const options = {
