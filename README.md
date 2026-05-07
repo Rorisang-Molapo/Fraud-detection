@@ -66,4 +66,5 @@ NEO4J_PASSWORD=yourpassword
 [![CodeQL Advanced](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml/badge.svg)](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml)
 
 <br/>
+---
 ## FEDERAL 20! TO THE WORLD © 2026
