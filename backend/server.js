@@ -47,7 +47,6 @@ app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const neo4jSession = driver.session();
     try {
-        // Check admin first
         const adminResult = await neo4jSession.run(
             `MATCH (a:Admin {username: $username, password: $password}) 
              RETURN a.username AS username, 'admin' AS role, null AS customerId`,
@@ -61,14 +60,9 @@ app.post('/api/login', async (req, res) => {
                 customerId: null,
                 loggedIn: true
             };
-            return res.json({ 
-                success: true, 
-                role: 'admin',
-                redirect: '/dashboard'
-            });
+            return res.json({ success: true, role: 'admin', redirect: '/dashboard' });
         }
         
-        // Check customer
         const customerResult = await neo4jSession.run(
             `MATCH (c:Customer {username: $username, password: $password}) 
              RETURN c.username AS username, 'customer' AS role, c.id AS customerId`,
@@ -79,18 +73,13 @@ app.post('/api/login', async (req, res) => {
             req.session.user = {
                 username: customerResult.records[0].get('username'),
                 role: 'customer',
-                customerId: customerResult.records[0].get('customerId'),
+                customerId: toNativeNumber(customerResult.records[0].get('customerId')),
                 loggedIn: true
             };
-            return res.json({ 
-                success: true, 
-                role: 'customer',
-                redirect: '/customer-dashboard'
-            });
+            return res.json({ success: true, role: 'customer', redirect: '/customer-dashboard' });
         }
         
         res.status(401).json({ success: false, message: 'Invalid credentials' });
-        
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -101,10 +90,7 @@ app.post('/api/login', async (req, res) => {
 
 app.get('/api/check-auth', (req, res) => {
     if (req.session.user && req.session.user.loggedIn) {
-        res.json({ 
-            authenticated: true,
-            role: req.session.user.role 
-        });
+        res.json({ authenticated: true, role: req.session.user.role });
     } else {
         res.json({ authenticated: false, role: null });
     }
@@ -119,30 +105,22 @@ app.post('/api/logout', (req, res) => {
 // DASHBOARD ENDPOINTS
 // ===========================================
 
-// FIX: Rewrote Cypher to avoid Cartesian product caused by chaining MATCH
-// after WITH without proper aggregation. All Customer aggregates are now
-// computed in one pass before joining with Transaction counts.
 app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
         const result = await session.run(`
             MATCH (c:Customer)
-            WITH
-                COUNT(c) AS totalCustomers,
-                AVG(c.riskScore) AS avgRiskScore,
-                SUM(CASE WHEN c.riskScore >= 15 THEN 1 ELSE 0 END) AS highRiskCustomers
+            WITH COUNT(c) AS totalCustomers,
+                 AVG(c.riskScore) AS avgRiskScore,
+                 SUM(CASE WHEN c.riskScore >= 15 THEN 1 ELSE 0 END) AS highRiskCustomers
             MATCH (t:Transaction)
             WITH totalCustomers, avgRiskScore, highRiskCustomers,
-                COUNT(t) AS totalTransactions,
-                SUM(CASE WHEN t.isFlagged = true THEN 1 ELSE 0 END) AS flaggedTransactions
+                 COUNT(t) AS totalTransactions,
+                 SUM(CASE WHEN t.isFlagged = true THEN 1 ELSE 0 END) AS flaggedTransactions
             OPTIONAL MATCH (:Account)-[r:TRANSFERRED_TO]->(:Account)
-            RETURN
-                totalCustomers,
-                totalTransactions,
-                flaggedTransactions,
-                highRiskCustomers,
-                COALESCE(SUM(r.amount), 0) AS totalTransferAmount,
-                COALESCE(avgRiskScore, 0) AS avgRiskScore
+            RETURN totalCustomers, totalTransactions, flaggedTransactions, highRiskCustomers,
+                   COALESCE(SUM(r.amount), 0) AS totalTransferAmount,
+                   COALESCE(avgRiskScore, 0) AS avgRiskScore
         `);
         const record = result.records[0];
         res.json({
@@ -166,10 +144,11 @@ app.get('/api/dashboard/high-risk-alerts', requireAuth, async (req, res) => {
     try {
         const result = await session.run(`
             MATCH (c:Customer) WHERE c.riskScore >= 15
-            RETURN c.id AS id, c.name AS name, c.riskScore AS riskScore ORDER BY c.riskScore DESC LIMIT 10
+            RETURN c.id AS id, c.name AS name, c.riskScore AS riskScore
+            ORDER BY c.riskScore DESC LIMIT 10
         `);
         const alerts = result.records.map(record => ({
-            id: record.get('id'),
+            id: toNativeNumber(record.get('id')),
             name: record.get('name'),
             riskScore: toNativeNumber(record.get('riskScore'))
         }));
@@ -186,10 +165,10 @@ app.get('/api/dashboard/risk-distribution', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
         const result = await session.run(`
-            MATCH (c:Customer) RETURN 
-                SUM(CASE WHEN c.riskScore >= 30 THEN 1 ELSE 0 END) AS high,
-                SUM(CASE WHEN c.riskScore >= 15 AND c.riskScore < 30 THEN 1 ELSE 0 END) AS medium,
-                SUM(CASE WHEN c.riskScore < 15 THEN 1 ELSE 0 END) AS low
+            MATCH (c:Customer)
+            RETURN SUM(CASE WHEN c.riskScore >= 30 THEN 1 ELSE 0 END) AS high,
+                   SUM(CASE WHEN c.riskScore >= 15 AND c.riskScore < 30 THEN 1 ELSE 0 END) AS medium,
+                   SUM(CASE WHEN c.riskScore < 15 THEN 1 ELSE 0 END) AS low
         `);
         const record = result.records[0];
         res.json({
@@ -213,16 +192,18 @@ app.get('/api/customers', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
         const result = await session.run(`
-            MATCH (c:Customer) RETURN c.id AS id, c.name AS name, c.email AS email, c.phone AS phone, 
-            c.riskScore AS riskScore, c.joinDate AS joinDate ORDER BY c.id
+            MATCH (c:Customer)
+            RETURN c.id AS id, c.name AS name, c.email AS email, c.phone AS phone,
+                   c.riskScore AS riskScore, c.joinDate AS joinDate
+            ORDER BY c.id
         `);
         const customers = result.records.map(record => ({
-            id: record.get('id'),
+            id: toNativeNumber(record.get('id')),
             name: record.get('name'),
             email: record.get('email'),
             phone: record.get('phone'),
             riskScore: toNativeNumber(record.get('riskScore')),
-            joinDate: record.get('joinDate')
+            joinDate: record.get('joinDate')?.toString() ?? null
         }));
         res.json(customers);
     } catch (error) {
@@ -238,17 +219,19 @@ app.get('/api/customers/search', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
         const result = await session.run(`
-            MATCH (c:Customer) WHERE c.id CONTAINS $q OR c.name CONTAINS $q OR c.email CONTAINS $q OR c.phone CONTAINS $q
-            RETURN c.id AS id, c.name AS name, c.email AS email, c.phone AS phone, 
-            c.riskScore AS riskScore, c.joinDate AS joinDate ORDER BY c.id
+            MATCH (c:Customer)
+            WHERE c.id CONTAINS $q OR c.name CONTAINS $q OR c.email CONTAINS $q OR c.phone CONTAINS $q
+            RETURN c.id AS id, c.name AS name, c.email AS email, c.phone AS phone,
+                   c.riskScore AS riskScore, c.joinDate AS joinDate
+            ORDER BY c.id
         `, { q });
         const customers = result.records.map(record => ({
-            id: record.get('id'),
+            id: toNativeNumber(record.get('id')),
             name: record.get('name'),
             email: record.get('email'),
             phone: record.get('phone'),
             riskScore: toNativeNumber(record.get('riskScore')),
-            joinDate: record.get('joinDate')
+            joinDate: record.get('joinDate')?.toString() ?? null
         }));
         res.json(customers);
     } catch (error) {
@@ -259,16 +242,14 @@ app.get('/api/customers/search', requireAuth, async (req, res) => {
     }
 });
 
-// FIX: Added .toString() on timestamp fields so Neo4j DateTime objects are
-// serialized to ISO strings before JSON.stringify, preventing "Invalid Date"
-// runtime errors in the frontend.
 app.get('/api/customers/:id', requireAuth, async (req, res) => {
     const id = parseInt(req.params.id, 10);
     const session = driver.session();
     try {
         const customerResult = await session.run(`
-            MATCH (c:Customer {id: $id}) RETURN c.id AS id, c.name AS name, c.email AS email, c.phone AS phone, 
-            c.riskScore AS riskScore, c.joinDate AS joinDate
+            MATCH (c:Customer {id: $id})
+            RETURN c.id AS id, c.name AS name, c.email AS email, c.phone AS phone,
+                   c.riskScore AS riskScore, c.joinDate AS joinDate
         `, { id });
         if (customerResult.records.length === 0) return res.status(404).json({ error: 'Customer not found' });
         const customer = customerResult.records[0];
@@ -286,14 +267,14 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
 
         const transactionsResult = await session.run(`
             MATCH (c:Customer {id: $id})-[:OWNS]->(a:Account)-[:MADE]->(t:Transaction)
-            RETURN t.transactionId AS transactionId, t.amount AS amount, t.type AS type, 
-            t.timestamp AS timestamp, t.isFlagged AS isFlagged ORDER BY t.timestamp DESC LIMIT 20
+            RETURN t.transactionId AS transactionId, t.amount AS amount, t.type AS type,
+                   t.timestamp AS timestamp, t.isFlagged AS isFlagged
+            ORDER BY t.timestamp DESC LIMIT 20
         `, { id });
         const transactions = transactionsResult.records.map(record => ({
             transactionId: toNativeNumber(record.get('transactionId')),
             amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
-            // FIX: serialize Neo4j DateTime to string before sending
             timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             isFlagged: !!record.get('isFlagged')
         }));
@@ -304,7 +285,7 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
             email: customer.get('email'),
             phone: customer.get('phone'),
             riskScore: toNativeNumber(customer.get('riskScore')),
-            joinDate: customer.get('joinDate')?.toString?.() ?? customer.get('joinDate'),
+            joinDate: customer.get('joinDate')?.toString() ?? customer.get('joinDate'),
             accounts, transactions
         });
     } catch (error) {
@@ -326,7 +307,7 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
         const flaggedResult = await session.run(`
             MATCH (t:Transaction {isFlagged: true})<-[:MADE]-(a:Account)<-[:OWNS]-(c:Customer)
             RETURN t.transactionId AS transactionId, t.amount AS amount, t.timestamp AS timestamp,
-            c.name AS customerName, c.id AS customerId, a.accountNumber AS accountNumber, t.flagReason AS flagReason
+                   c.name AS customerName, c.id AS customerId, a.accountNumber AS accountNumber, t.flagReason AS flagReason
             ORDER BY t.timestamp DESC
         `);
         flaggedResult.records.forEach(record => {
@@ -364,8 +345,8 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
         const pathResult = await session.run(`
             MATCH path = (src:Account)-[:TRANSFERRED_TO*2..3]->(dst:Account) WHERE src <> dst
             RETURN src.accountNumber AS source, dst.accountNumber AS destination,
-            [node IN nodes(path) | node.accountNumber] AS path,
-            REDUCE(s = 0, r IN relationships(path) | s + r.amount) AS totalAmount LIMIT 5
+                   [node IN nodes(path) | node.accountNumber] AS path,
+                   REDUCE(s = 0, r IN relationships(path) | s + r.amount) AS totalAmount LIMIT 5
         `);
         pathResult.records.forEach(record => {
             alerts.push({
@@ -394,16 +375,13 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
 // NETWORK VISUALIZATION
 // ===========================================
 
-// FIX: Added WHERE clauses to filter out nodes with null city/country so
-// Location node ids are never "null,null", which caused vis-network to throw
-// "Node must have an id".
 app.get('/api/network/data', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
         const nodesResult = await session.run(`
-            MATCH (c:Customer) RETURN 'Customer' AS type, c.id AS id, c.name AS label, c.riskScore AS riskScore, NULL AS isFlagged, NULL AS amount
+            MATCH (c:Customer) RETURN 'Customer' AS type, toString(c.id) AS id, c.name AS label, c.riskScore AS riskScore, NULL AS isFlagged, NULL AS amount
             UNION ALL MATCH (a:Account) RETURN 'Account' AS type, toString(a.accountNumber) AS id, toString(a.accountNumber) AS label, NULL AS riskScore, a.isFlagged AS isFlagged, NULL AS amount
-            UNION ALL MATCH (t:Transaction) RETURN 'Transaction' AS type, t.transactionId AS id, t.transactionId AS label, NULL AS riskScore, t.isFlagged AS isFlagged, t.amount AS amount
+            UNION ALL MATCH (t:Transaction) RETURN 'Transaction' AS type, toString(t.transactionId) AS id, toString(t.transactionId) AS label, NULL AS riskScore, t.isFlagged AS isFlagged, t.amount AS amount
             UNION ALL MATCH (d:Device) WHERE d.deviceId IS NOT NULL RETURN 'Device' AS type, d.deviceId AS id, d.deviceId AS label, NULL AS riskScore, NULL AS isFlagged, NULL AS amount
             UNION ALL MATCH (i:IPAddress) WHERE i.address IS NOT NULL RETURN 'IPAddress' AS type, i.address AS id, i.address AS label, NULL AS riskScore, i.isVPN AS isFlagged, NULL AS amount
             UNION ALL MATCH (l:Location) WHERE l.city IS NOT NULL AND l.country IS NOT NULL RETURN 'Location' AS type, l.city + ',' + l.country AS id, l.city + ',' + l.country AS label, NULL AS riskScore, CASE WHEN l.riskLevel = 'high' THEN true ELSE false END AS isFlagged, NULL AS amount
@@ -417,14 +395,28 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
                 isFlagged: record.get('isFlagged') || false,
                 amount: record.get('amount') ? toNativeNumber(record.get('amount')) : null
             }))
-            // Extra safety: drop any node that still has a null/empty id
-            .filter(n => n.id != null && n.id !== '' && n.id !== 'null,null');
+            .filter(n => n.id != null && n.id !== '');
 
         const edgesResult = await session.run(`
-            MATCH (source)-[r]->(target) WHERE (source:Customer OR source:Account OR source:Transaction OR source:Device OR source:IPAddress OR source:Location) AND (target:Customer OR target:Account OR target:Transaction OR target:Device OR target:IPAddress OR target:Location)
-            RETURN CASE WHEN source:Customer THEN source.id WHEN source:Account THEN toString(source.accountNumber) WHEN source:Transaction THEN source.transactionId WHEN source:Device THEN source.deviceId WHEN source:IPAddress THEN source.address WHEN source:Location THEN source.city + ',' + source.country END AS source,
-            CASE WHEN target:Customer THEN target.id WHEN target:Account THEN toString(target.accountNumber) WHEN target:Transaction THEN target.transactionId WHEN target:Device THEN target.deviceId WHEN target:IPAddress THEN target.address WHEN target:Location THEN target.city + ',' + target.country END AS target,
-            type(r) AS relationship, r.amount AS amount
+            MATCH (source)-[r]->(target)
+            WHERE (source:Customer OR source:Account OR source:Transaction OR source:Device OR source:IPAddress OR source:Location)
+              AND (target:Customer OR target:Account OR target:Transaction OR target:Device OR target:IPAddress OR target:Location)
+            RETURN
+              CASE WHEN source:Customer THEN toString(source.id)
+                   WHEN source:Account THEN toString(source.accountNumber)
+                   WHEN source:Transaction THEN toString(source.transactionId)
+                   WHEN source:Device THEN source.deviceId
+                   WHEN source:IPAddress THEN source.address
+                   WHEN source:Location THEN source.city + ',' + source.country
+              END AS source,
+              CASE WHEN target:Customer THEN toString(target.id)
+                   WHEN target:Account THEN toString(target.accountNumber)
+                   WHEN target:Transaction THEN toString(target.transactionId)
+                   WHEN target:Device THEN target.deviceId
+                   WHEN target:IPAddress THEN target.address
+                   WHEN target:Location THEN target.city + ',' + target.country
+              END AS target,
+              type(r) AS relationship, r.amount AS amount
         `);
         const edges = edgesResult.records
             .map(record => ({
@@ -433,7 +425,6 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
                 relationship: record.get('relationship'),
                 amount: record.get('amount') ? toNativeNumber(record.get('amount')) : null
             }))
-            // Drop edges whose endpoints are null (orphaned from filtered-out nodes)
             .filter(e => e.source != null && e.target != null && e.source !== '' && e.target !== '');
 
         res.json({ nodes, edges });
@@ -449,7 +440,6 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
 // REPORT ENDPOINTS
 // ===========================================
 
-// FIX: Added .toString() on timestamp so Neo4j DateTime is serialized correctly.
 app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -457,31 +447,22 @@ app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
             MATCH (t:Transaction {isFlagged: true})<-[:MADE]-(a:Account)
             OPTIONAL MATCH (t)-[:FROM_IP]->(ip:IPAddress)
             OPTIONAL MATCH (t)-[:OCCURRED_AT]->(l:Location)
-            RETURN t.transactionId AS id, 
-                   t.amount AS amount, 
-                   t.type AS type, 
-                   t.timestamp AS timestamp,
-                   t.flagReason AS reason,
-                   a.accountNumber AS accountNumber,
-                   l.city AS location,
-                   ip.address AS ipAddress,
-                   ip.isVPN AS usedVPN
+            RETURN t.transactionId AS id, t.amount AS amount, t.type AS type, t.timestamp AS timestamp,
+                   t.flagReason AS reason, a.accountNumber AS accountNumber, l.city AS location,
+                   ip.address AS ipAddress, ip.isVPN AS usedVPN
             ORDER BY t.timestamp DESC
         `);
-        
         const flaggedTransactions = result.records.map(record => ({
-            id: record.get('id'),
+            id: toNativeNumber(record.get('id')),
             amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
-            // FIX: serialize Neo4j DateTime to string
             timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             reason: record.get('reason') || 'Manual review required',
-            accountNumber: record.get('accountNumber') ? toNativeNumber(record.get('accountNumber')) : 'N/A',
+            accountNumber: toNativeNumber(record.get('accountNumber')),
             location: record.get('location') || 'Unknown',
             ipAddress: record.get('ipAddress') || 'Unknown',
             usedVPN: record.get('usedVPN') || false
         }));
-        
         res.json(flaggedTransactions);
     } catch (error) {
         console.error('Flagged transactions error:', error);
@@ -491,35 +472,25 @@ app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
     }
 });
 
-// FIX: Added .toString() on timestamp.
 app.get('/api/transactions/all', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
         const result = await session.run(`
             MATCH (t:Transaction)<-[:MADE]-(a:Account)
             OPTIONAL MATCH (t)-[:OCCURRED_AT]->(l:Location)
-            RETURN t.transactionId AS id, 
-                   t.amount AS amount, 
-                   t.type AS type, 
-                   t.timestamp AS timestamp,
-                   t.isFlagged AS isFlagged,
-                   a.accountNumber AS accountNumber,
-                   l.city AS location
-            ORDER BY t.timestamp DESC
-            LIMIT 50
+            RETURN t.transactionId AS id, t.amount AS amount, t.type AS type, t.timestamp AS timestamp,
+                   t.isFlagged AS isFlagged, a.accountNumber AS accountNumber, l.city AS location
+            ORDER BY t.timestamp DESC LIMIT 50
         `);
-        
         const transactions = result.records.map(record => ({
-            id: record.get('id'),
+            id: toNativeNumber(record.get('id')),
             amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
-            // FIX: serialize Neo4j DateTime to string
             timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             isFlagged: record.get('isFlagged'),
             accountNumber: toNativeNumber(record.get('accountNumber')),
             location: record.get('location') || 'Unknown'
         }));
-        
         res.json(transactions);
     } catch (error) {
         console.error('Transactions error:', error);
@@ -606,11 +577,10 @@ app.get('/api/reports/money-mules', requireAuth, async (req, res) => {
                    CASE WHEN aggregateVol > 10000 THEN 90 + (aggregateVol / 10000)
                         WHEN aggregateVol > 5000 THEN 70 + (aggregateVol / 10000)
                         ELSE 50 + (aggregateVol / 10000) END AS riskScore
-            ORDER BY riskScore DESC
-            LIMIT 5
+            ORDER BY riskScore DESC LIMIT 5
         `);
         const mules = result.records.map(record => ({
-            entityId: record.get('entityId'),
+            entityId: toNativeNumber(record.get('entityId')),
             velocity: record.get('velocity'),
             aggregateVol: toNativeNumber(record.get('aggregateVol')),
             riskScore: Math.min(Math.floor(toNativeNumber(record.get('riskScore'))), 100)
@@ -664,13 +634,11 @@ app.get('/api/reports/vpn-analysis', requireAuth, async (req, res) => {
         const result = await session.run(`
             MATCH (t:Transaction)-[:FROM_IP]->(ip:IPAddress)
             WHERE ip.isVPN = true OR ip.isProxy = true
-            RETURN COUNT(t) AS vpnTransactions,
-                   COUNT(DISTINCT ip.address) AS vpnIPs
+            RETURN COUNT(t) AS vpnTransactions, COUNT(DISTINCT ip.address) AS vpnIPs
         `);
         const totalTransResult = await session.run(`MATCH (t:Transaction) RETURN COUNT(t) AS total`);
         const totalTrans = toNativeNumber(totalTransResult.records[0].get('total')) || 1;
         const vpnTrans = toNativeNumber(result.records[0].get('vpnTransactions'));
-        
         res.json({
             totalVolume: Math.min(Math.floor((vpnTrans / totalTrans) * 100), 100),
             topService: 'NordVPN',
@@ -716,7 +684,7 @@ app.get('/api/transfers', requireAuth, async (req, res) => {
     try {
         const result = await session.run(`
             MATCH (a1:Account)-[r:TRANSFERRED_TO]->(a2:Account)
-            RETURN a1.accountNumber AS fromAccount, a2.accountNumber AS toAccount, 
+            RETURN a1.accountNumber AS fromAccount, a2.accountNumber AS toAccount,
                    r.amount AS amount, r.timestamp AS timestamp, r.reference AS reference
             ORDER BY r.timestamp DESC
         `);
@@ -743,19 +711,14 @@ app.get('/api/transfers', requireAuth, async (req, res) => {
 app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
     const session = driver.session();
     const username = req.session.user.username;
-    
     if (req.session.user.role === 'admin') {
         return res.json({ isAdmin: true });
     }
-    
     try {
         const customerResult = await session.run(`
             MATCH (c:Customer {username: $username})
             OPTIONAL MATCH (c)-[:OWNS]->(a:Account)
-            RETURN c.id AS customerId, 
-                   c.name AS name,
-                   c.riskScore AS riskScore,
-                   c.joinDate AS joinDate,
+            RETURN c.id AS customerId, c.name AS name, c.riskScore AS riskScore, c.joinDate AS joinDate,
                    COLLECT(DISTINCT {
                        accountNumber: a.accountNumber,
                        type: a.type,
@@ -763,11 +726,9 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
                        isFlagged: a.isFlagged
                    }) AS accounts
         `, { username });
-        
         if (customerResult.records.length === 0) {
             return res.status(404).json({ error: 'Customer not found' });
         }
-        
         const record = customerResult.records[0];
         const accounts = record.get('accounts')
             .filter(acc => acc.accountNumber !== null)
@@ -783,20 +744,12 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account)
             MATCH (a)-[:MADE]->(t:Transaction)
             OPTIONAL MATCH (t)-[:OCCURRED_AT]->(l:Location)
-            RETURN t.transactionId AS id,
-                   t.amount AS amount,
-                   t.type AS type,
-                   t.timestamp AS timestamp,
-                   t.isFlagged AS isFlagged,
-                   t.merchant AS merchant,
-                   t.flagReason AS flagReason,
-                   l.city AS location
-            ORDER BY t.timestamp DESC
-            LIMIT 20
+            RETURN t.transactionId AS id, t.amount AS amount, t.type AS type, t.timestamp AS timestamp,
+                   t.isFlagged AS isFlagged, t.merchant AS merchant, t.flagReason AS flagReason, l.city AS location
+            ORDER BY t.timestamp DESC LIMIT 20
         `, { username });
-        
         const transactions = transactionsResult.records.map(record => ({
-            id: record.get('id'),
+            id: toNativeNumber(record.get('id')),
             amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
             timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
@@ -810,20 +763,15 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account)
             MATCH (sender:Account)-[r:TRANSFERRED_TO]->(a)
             OPTIONAL MATCH (sender)<-[:OWNS]-(senderCustomer:Customer)
-            RETURN r.amount AS amount,
-                   r.timestamp AS timestamp,
-                   r.reference AS reference,
-                   sender.accountNumber AS fromAccount,
-                   senderCustomer.name AS fromName
-            ORDER BY r.timestamp DESC
-            LIMIT 10
+            RETURN r.amount AS amount, r.timestamp AS timestamp, r.reference AS reference,
+                   sender.accountNumber AS fromAccount, senderCustomer.name AS fromName
+            ORDER BY r.timestamp DESC LIMIT 10
         `, { username });
-        
         const incomingTransfers = incomingResult.records.map(record => ({
-            amount: record.get('amount') ? toNativeNumber(record.get('amount')) : 0,
+            amount: toNativeNumber(record.get('amount')),
             timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             reference: record.get('reference'),
-            fromAccount: record.get('fromAccount') ? toNativeNumber(record.get('fromAccount')) : null,
+            fromAccount: toNativeNumber(record.get('fromAccount')),
             fromName: record.get('fromName')
         }));
         
@@ -831,36 +779,30 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account)
             MATCH (a)-[r:TRANSFERRED_TO]->(receiver:Account)
             OPTIONAL MATCH (receiver)<-[:OWNS]-(receiverCustomer:Customer)
-            RETURN r.amount AS amount,
-                   r.timestamp AS timestamp,
-                   r.reference AS reference,
-                   receiver.accountNumber AS toAccount,
-                   receiverCustomer.name AS toName
-            ORDER BY r.timestamp DESC
-            LIMIT 10
+            RETURN r.amount AS amount, r.timestamp AS timestamp, r.reference AS reference,
+                   receiver.accountNumber AS toAccount, receiverCustomer.name AS toName
+            ORDER BY r.timestamp DESC LIMIT 10
         `, { username });
-        
         const outgoingTransfers = outgoingResult.records.map(record => ({
-            amount: record.get('amount') ? toNativeNumber(record.get('amount')) : 0,
+            amount: toNativeNumber(record.get('amount')),
             timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             reference: record.get('reference'),
-            toAccount: record.get('toAccount') ? toNativeNumber(record.get('toAccount')) : null,
+            toAccount: toNativeNumber(record.get('toAccount')),
             toName: record.get('toName')
         }));
         
         res.json({
             isCustomer: true,
-            customerId: record.get('customerId'),
+            customerId: toNativeNumber(record.get('customerId')),
             name: record.get('name'),
-            riskScore: record.get('riskScore') ? toNativeNumber(record.get('riskScore')) : 0,
-            joinDate: record.get('joinDate'),
+            riskScore: toNativeNumber(record.get('riskScore')),
+            joinDate: record.get('joinDate')?.toString() ?? null,
             accounts: accounts,
             totalBalance: totalBalance,
             recentTransactions: transactions,
             incomingTransfers: incomingTransfers,
             outgoingTransfers: outgoingTransfers
         });
-        
     } catch (error) {
         console.error('Customer dashboard error:', error);
         res.status(500).json({ error: 'Failed to fetch customer data' });
@@ -873,70 +815,42 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
     const session = driver.session();
     const username = req.session.user.username;
     const { fromAccountNumber, toAccountNumber, amount, reference } = req.body;
-    
-    console.log('=== TRANSFER REQUEST ===');
-    console.log('Username:', username);
-    console.log('From Account:', fromAccountNumber);
-    console.log('To Account:', toAccountNumber);
-    console.log('Amount:', amount);
-    
     if (!fromAccountNumber || !toAccountNumber || !amount || amount <= 0) {
         return res.status(400).json({ error: 'Invalid transfer details' });
     }
-    
     try {
-        // Check if user owns the from account and get current balance
         const authResult = await session.run(`
             MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account {accountNumber: $fromAccount})
             RETURN a.accountNumber AS accountNumber, a.balance AS balance
         `, { username, fromAccount: fromAccountNumber });
-        
         if (authResult.records.length === 0) {
             return res.status(403).json({ error: 'You do not own this account' });
         }
-        
         const currentBalance = toNativeNumber(authResult.records[0].get('balance'));
-        console.log('Current balance:', currentBalance);
-        
         if (currentBalance < amount) {
             return res.status(400).json({ error: 'Insufficient funds' });
         }
-        
-        // Check if target account exists
         const targetResult = await session.run(`
             MATCH (target:Account {accountNumber: $toAccount})
             RETURN target.accountNumber AS accountNumber
         `, { toAccount: toAccountNumber });
-        
         if (targetResult.records.length === 0) {
             return res.status(404).json({ error: 'Recipient account not found' });
         }
-        
-        // Start a transaction
         const tx = session.beginTransaction();
-        
         try {
-            // Deduct from sender
-            const deductResult = await tx.run(`
+            await tx.run(`
                 MATCH (a:Account {accountNumber: $fromAccount})
                 SET a.balance = a.balance - $amount
                 RETURN a.balance AS newBalance
             `, { fromAccount: fromAccountNumber, amount });
-            
-            const newSenderBalance = toNativeNumber(deductResult.records[0].get('newBalance'));
-            console.log('New sender balance:', newSenderBalance);
-            
-            // Add to receiver
             await tx.run(`
                 MATCH (a:Account {accountNumber: $toAccount})
                 SET a.balance = a.balance + $amount
                 RETURN a.balance AS newBalance
             `, { toAccount: toAccountNumber, amount });
-            
             const isFlagged = amount > 10000;
             const transactionId = 'TXN' + Date.now();
-            
-            // Create TRANSFERRED_TO relationship
             await tx.run(`
                 MATCH (from:Account {accountNumber: $fromAccount})
                 MATCH (to:Account {accountNumber: $toAccount})
@@ -947,8 +861,6 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
                     isSuspicious: $isFlagged
                 }]->(to)
             `, { fromAccount: fromAccountNumber, toAccount: toAccountNumber, amount, reference: reference || 'Online transfer', isFlagged });
-            
-            // Create Transaction node and MADE relationship
             await tx.run(`
                 MATCH (from:Account {accountNumber: $fromAccount})
                 CREATE (t:Transaction {
@@ -961,32 +873,23 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
                 })
                 CREATE (from)-[:MADE]->(t)
             `, { fromAccount: fromAccountNumber, amount, transactionId, isFlagged });
-            
             await tx.commit();
-            console.log('Transaction committed successfully');
-            
-            // Verify balances after commit
             const verifyResult = await session.run(`
                 MATCH (a:Account {accountNumber: $fromAccount})
                 RETURN a.balance AS balance
             `, { fromAccount: fromAccountNumber });
-            
             const verifiedBalance = toNativeNumber(verifyResult.records[0].get('balance'));
-            console.log('Verified sender balance after commit:', verifiedBalance);
-            
             res.json({
                 success: true,
                 message: `Successfully transferred $${amount.toLocaleString()} to account ${toAccountNumber}`,
                 newBalance: verifiedBalance,
                 isFlagged: isFlagged
             });
-            
         } catch (txError) {
             console.error('Transaction error:', txError);
             await tx.rollback();
             throw txError;
         }
-        
     } catch (error) {
         console.error('Transfer error:', error);
         res.status(500).json({ error: 'Transfer failed. Please try again.' });
@@ -998,24 +901,19 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
 app.get('/api/customer/search-account', requireAuth, async (req, res) => {
     const session = driver.session();
     const { q } = req.query;
-    
     try {
         const result = await session.run(`
             MATCH (a:Account)
             WHERE toString(a.accountNumber) CONTAINS $q
             OPTIONAL MATCH (a)<-[:OWNS]-(c:Customer)
-            RETURN a.accountNumber AS accountNumber,
-                   a.type AS type,
-                   c.name AS ownerName
+            RETURN a.accountNumber AS accountNumber, a.type AS type, c.name AS ownerName
             LIMIT 10
         `, { q });
-        
         const accounts = result.records.map(record => ({
             accountNumber: toNativeNumber(record.get('accountNumber')),
             type: record.get('type'),
             ownerName: record.get('ownerName') || 'Unknown'
         }));
-        
         res.json(accounts);
     } catch (error) {
         console.error('Search error:', error);

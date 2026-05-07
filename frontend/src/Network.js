@@ -29,6 +29,13 @@ const Network = () => {
     }
   }, [loading, graphData, filter, maxTransactions, maxTransferEdges]);
 
+  const cleanId = (id) => {
+    if (id === null || id === undefined) return null;
+    if (typeof id === 'object' && id.low !== undefined) return id.low;
+    if (typeof id === 'object' && id.toString) return id.toString();
+    return id;
+  };
+
   const fetchNetworkData = async () => {
     try {
       const response = await axios.get('http://localhost:5000/api/network/data', {
@@ -37,18 +44,23 @@ const Network = () => {
       
       if (response.data && response.data.nodes && response.data.edges) {
         let limitedData = limitGraphData(response.data, maxTransactions, maxTransferEdges);
-
-        // FIX: Drop any node with a null/empty/malformed id before handing to vis-network.
-        // Location nodes whose city or country is null in Neo4j produce ids like
-        // "null,null" which causes vis-network to throw "Node must have an id".
-        limitedData.nodes = limitedData.nodes.filter(
-          n => n.id != null && n.id !== '' && n.id !== 'null,null' && !String(n.id).startsWith('null,') && !String(n.id).endsWith(',null')
-        );
-        // Drop edges whose source or target no longer exists after node filtering
+        
+        // Ensure every node has a string id
+        limitedData.nodes = limitedData.nodes
+          .filter(n => n.id != null && n.id !== '')
+          .map(node => ({
+            ...node,
+            id: String(cleanId(node.id))
+          }));
+        
         const validIds = new Set(limitedData.nodes.map(n => n.id));
-        limitedData.edges = limitedData.edges.filter(
-          e => e.source != null && e.target != null && validIds.has(e.source) && validIds.has(e.target)
-        );
+        limitedData.edges = limitedData.edges
+          .map(edge => ({
+            ...edge,
+            source: String(cleanId(edge.source)),
+            target: String(cleanId(edge.target))
+          }))
+          .filter(e => validIds.has(e.source) && validIds.has(e.target));
 
         setGraphData(limitedData);
       } else {
@@ -67,11 +79,9 @@ const Network = () => {
     }
   };
 
-  // Limit graph data for performance
   const limitGraphData = (data, maxTrans, maxTransfers) => {
     if (!data || !data.nodes || !data.edges) return data;
     
-    // Separate nodes by type
     const customers = data.nodes.filter(n => n.type === 'Customer');
     const accounts = data.nodes.filter(n => n.type === 'Account');
     const transactions = data.nodes.filter(n => n.type === 'Transaction').slice(0, maxTrans);
@@ -79,46 +89,35 @@ const Network = () => {
     const ipAddresses = data.nodes.filter(n => n.type === 'IPAddress');
     const locations = data.nodes.filter(n => n.type === 'Location');
     
-    // Get transaction IDs that are included
     const transactionIds = new Set(transactions.map(t => t.id));
     
-    // Filter edges to only those connected to included transactions
     let filteredEdges = data.edges.filter(e => {
-      if (transactionIds.has(e.source) || transactionIds.has(e.target)) {
-        return true;
-      }
+      if (transactionIds.has(e.source) || transactionIds.has(e.target)) return true;
       return false;
     });
     
-    // Limit TRANSFERRED_TO edges
     const transferEdges = filteredEdges.filter(e => e.relationship === 'TRANSFERRED_TO');
     const otherEdges = filteredEdges.filter(e => e.relationship !== 'TRANSFERRED_TO');
     
-    // Take most recent transfers by amount or limit
     const sortedTransfers = [...transferEdges].sort((a, b) => (b.amount || 0) - (a.amount || 0));
     const limitedTransfers = sortedTransfers.slice(0, maxTransfers);
     
     const finalEdges = [...otherEdges, ...limitedTransfers];
     
-    // Get all node IDs that are still connected
     const connectedNodeIds = new Set();
     finalEdges.forEach(e => {
-      // FIX: guard against null source/target before adding to set
       if (e.source != null) connectedNodeIds.add(e.source);
       if (e.target != null) connectedNodeIds.add(e.target);
     });
     
-    // Also include all customers and accounts (important for context)
     customers.forEach(c => connectedNodeIds.add(c.id));
     accounts.forEach(a => connectedNodeIds.add(a.id));
     
-    // Filter nodes
     const finalNodes = data.nodes.filter(n => connectedNodeIds.has(n.id));
     
     return { nodes: finalNodes, edges: finalEdges };
   };
 
-  // Aggregate multiple transfers between same accounts
   const aggregateTransferEdges = (edges) => {
     const transferMap = new Map();
     const otherEdges = [];
@@ -140,7 +139,6 @@ const Network = () => {
       }
     });
     
-    // Convert back to edges with aggregated info
     const aggregatedTransfers = Array.from(transferMap.values()).map(transfer => ({
       ...transfer,
       label: transfer.count > 1 ? `${transfer.count}x transfers` : `$${transfer.amount?.toLocaleString()}`,
@@ -181,12 +179,8 @@ const Network = () => {
   };
 
   const getNodeSize = (type, amount, riskScore) => {
-    if (type === 'Transaction' && amount) {
-      return Math.min(25 + (amount / 1000), 45);
-    }
-    if (type === 'Customer' && riskScore) {
-      return 18 + (riskScore / 3);
-    }
+    if (type === 'Transaction' && amount) return Math.min(25 + (amount / 1000), 45);
+    if (type === 'Customer' && riskScore) return 18 + (riskScore / 3);
     if (type === 'Account') return 22;
     if (type === 'Device') return 18;
     if (type === 'IPAddress') return 18;
@@ -209,8 +203,6 @@ const Network = () => {
 
     let nodesToShow = graphData.nodes;
     let edgesToShow = [...graphData.edges];
-    
-    // Aggregate multiple transfers for cleaner visualization
     edgesToShow = aggregateTransferEdges(edgesToShow);
 
     if (filter === 'SUSPICIOUS') {
@@ -218,19 +210,13 @@ const Network = () => {
         .filter(n => n.isFlagged || (n.riskScore && n.riskScore >= 15))
         .map(n => n.id);
       nodesToShow = graphData.nodes.filter(n => suspiciousIds.includes(n.id));
-      edgesToShow = edgesToShow.filter(e => 
-        suspiciousIds.includes(e.source) && suspiciousIds.includes(e.target)
-      );
+      edgesToShow = edgesToShow.filter(e => suspiciousIds.includes(e.source) && suspiciousIds.includes(e.target));
     } else if (filter !== 'ALL') {
       nodesToShow = graphData.nodes.filter(n => n.type === filter);
       const nodeIds = new Set(nodesToShow.map(n => n.id));
-      edgesToShow = edgesToShow.filter(e => 
-        nodeIds.has(e.source) && nodeIds.has(e.target)
-      );
+      edgesToShow = edgesToShow.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
     }
 
-    // FIX: Filter out any nodes that still have a null/empty id before passing
-    // to vis-network — vis throws "Node must have an id" otherwise.
     const visNodes = nodesToShow
       .filter(node => node.id != null && node.id !== '')
       .map(node => {
@@ -245,55 +231,32 @@ const Network = () => {
           color: {
             background: colors.background,
             border: colors.border,
-            highlight: {
-              background: colors.background,
-              border: '#ffffff'
-            }
+            highlight: { background: colors.background, border: '#ffffff' }
           },
-          font: {
-            color: '#ffffff',
-            size: getFontSize(node.type),
-            face: 'Courier New'
-          },
+          font: { color: '#ffffff', size: getFontSize(node.type), face: 'Courier New' },
           size: getNodeSize(node.type, node.amount, node.riskScore),
           shape: node.type === 'Customer' ? 'dot' : 'box',
           borderWidth: node.isFlagged ? 3 : 1
         };
       });
 
-    // Build set of valid node ids so we can drop orphan edges
     const visNodeIds = new Set(visNodes.map(n => n.id));
-
-    // Create unique IDs for all edges; also drop edges referencing removed nodes
     const visEdges = edgesToShow
       .filter(edge => visNodeIds.has(edge.source) && visNodeIds.has(edge.target))
       .map((edge, idx) => {
         let color = '#64748b';
         let width = edge.width || 1;
         let dashes = false;
-        
         if (edge.relationship === 'TRANSFERRED_TO') {
           color = '#f59e0b';
           width = Math.min(5, edge.width || (edge.amount > 20000 ? 4 : edge.amount > 10000 ? 3 : 2));
         }
-        if (edge.relationship === 'MADE') {
-          color = '#a78bfa';
-        }
-        if (edge.relationship === 'OWNS') {
-          color = '#60a5fa';
-        }
-        if (edge.relationship === 'USED' || edge.relationship === 'USES_DEVICE') {
-          color = '#f97316';
-        }
-        if (edge.relationship === 'FROM_IP') {
-          color = '#06b6d4';
-        }
-        if (edge.relationship === 'OCCURRED_AT') {
-          color = '#ec489a';
-        }
-
+        if (edge.relationship === 'MADE') color = '#a78bfa';
+        if (edge.relationship === 'OWNS') color = '#60a5fa';
+        if (edge.relationship === 'USED' || edge.relationship === 'USES_DEVICE') color = '#f97316';
+        if (edge.relationship === 'FROM_IP') color = '#06b6d4';
+        if (edge.relationship === 'OCCURRED_AT') color = '#ec489a';
         const uniqueId = `edge_${idx}_${Date.now()}`;
-        
         return {
           id: uniqueId,
           from: edge.source,
@@ -303,62 +266,24 @@ const Network = () => {
           color: color,
           width: width,
           dashes: dashes,
-          font: {
-            size: 9,
-            color: '#94a3b8',
-            face: 'Courier New',
-            align: 'middle'
-          },
-          smooth: {
-            type: 'curvedCW',
-            roundness: 0.2
-          },
-          arrows: {
-            to: {
-              enabled: true,
-              scaleFactor: 0.8
-            }
-          }
+          font: { size: 9, color: '#94a3b8', face: 'Courier New', align: 'middle' },
+          smooth: { type: 'curvedCW', roundness: 0.2 },
+          arrows: { to: { enabled: true, scaleFactor: 0.8 } }
         };
       });
 
     const options = {
       nodes: {
         shape: 'dot',
-        scaling: {
-          min: 15,
-          max: 40
-        },
-        font: {
-          face: 'Courier New',
-          size: 11,
-          color: '#ffffff'
-        },
+        scaling: { min: 15, max: 40 },
+        font: { face: 'Courier New', size: 11, color: '#ffffff' },
         borderWidth: 1,
-        shadow: {
-          enabled: true,
-          color: 'rgba(0,0,0,0.5)',
-          size: 5
-        }
+        shadow: { enabled: true, color: 'rgba(0,0,0,0.5)', size: 5 }
       },
       edges: {
-        smooth: {
-          type: 'curvedCW',
-          roundness: 0.2
-        },
-        arrows: {
-          to: {
-            enabled: true,
-            scaleFactor: 0.8
-          }
-        },
-        font: {
-          size: 9,
-          color: '#94a3b8',
-          face: 'Courier New',
-          align: 'middle',
-          strokeWidth: 0
-        },
+        smooth: { type: 'curvedCW', roundness: 0.2 },
+        arrows: { to: { enabled: true, scaleFactor: 0.8 } },
+        font: { size: 9, color: '#94a3b8', face: 'Courier New', align: 'middle', strokeWidth: 0 },
         color: '#64748b',
         width: 1,
         hoverWidth: 2,
@@ -366,42 +291,21 @@ const Network = () => {
       },
       physics: {
         enabled: true,
-        stabilization: {
-          iterations: 50,
-          fit: true
-        },
-        barnesHut: {
-          gravitationalConstant: -8000,
-          centralGravity: 0.3,
-          springLength: 95,
-          springConstant: 0.04,
-          damping: 0.09
-        }
+        stabilization: { iterations: 50, fit: true },
+        barnesHut: { gravitationalConstant: -8000, centralGravity: 0.3, springLength: 95, springConstant: 0.04, damping: 0.09 }
       },
-      interaction: {
-        hover: true,
-        tooltipDelay: 200,
-        zoomView: true,
-        dragView: true,
-        navigationButtons: false
-      },
-      layout: {
-        improvedLayout: true
-      }
+      interaction: { hover: true, tooltipDelay: 200, zoomView: true, dragView: true, navigationButtons: false },
+      layout: { improvedLayout: true }
     };
 
     const data = { nodes: visNodes, edges: visEdges };
-    
     try {
       networkInstanceRef.current = new VisNetwork(containerRef.current, data, options);
-
       networkInstanceRef.current.on('click', (params) => {
         if (params.nodes.length > 0) {
           const nodeId = params.nodes[0];
           const clickedNode = graphData.nodes.find(n => n.id === nodeId);
-          if (clickedNode) {
-            setSelectedNode(clickedNode);
-          }
+          if (clickedNode) setSelectedNode(clickedNode);
         } else {
           setSelectedNode(null);
         }
@@ -419,22 +323,14 @@ const Network = () => {
 
   const handleNavigate = (page, path) => {
     setActivePage(page);
-    if (path) {
-      setTimeout(() => {
-        navigate(path);
-      }, 150);
-    }
+    if (path) setTimeout(() => navigate(path), 150);
   };
 
-  const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen);
-  };
+  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
   const handleLogout = async () => {
     try {
-      await axios.post('http://localhost:5000/api/logout', {}, {
-        withCredentials: true
-      });
+      await axios.post('http://localhost:5000/api/logout', {}, { withCredentials: true });
       navigate('/login');
     } catch (error) {
       console.error('Logout failed:', error);
@@ -461,32 +357,16 @@ const Network = () => {
       <div className="sidebar" style={{ width: sidebarOpen ? '260px' : '60px' }}>
         <div className="sidebar-header">
           {sidebarOpen && <h2 className="sidebar-title">FEDERAL 20!</h2>}
-          <button className="sidebar-toggle" onClick={toggleSidebar}>
-            {sidebarOpen ? '<' : '>'}
-          </button>
+          <button className="sidebar-toggle" onClick={toggleSidebar}>{sidebarOpen ? '<' : '>'}</button>
         </div>
-        
         <nav className="sidebar-nav">
-          <button onClick={() => handleNavigate('dashboard', '/dashboard')} className={`nav-item ${activePage === 'dashboard' ? 'nav-item-active' : ''}`}>
-            {sidebarOpen ? 'DASHBOARD' : 'DB'}
-          </button>
-          <button onClick={() => handleNavigate('customer', '/customer')} className={`nav-item ${activePage === 'customer' ? 'nav-item-active' : ''}`}>
-            {sidebarOpen ? 'CUSTOMERS' : 'CU'}
-          </button>
-          <button onClick={() => handleNavigate('alerts', '/alerts')} className={`nav-item ${activePage === 'alerts' ? 'nav-item-active' : ''}`}>
-            {sidebarOpen ? 'ALERTS' : 'AL'}
-          </button>
-          <button onClick={() => handleNavigate('network', '/network')} className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}>
-            {sidebarOpen ? 'NETWORK' : 'NW'}
-          </button>
-          <button onClick={() => handleNavigate('reports', '/reports')} className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}>
-            {sidebarOpen ? 'REPORTS' : 'RP'}
-          </button>
+          <button onClick={() => handleNavigate('dashboard', '/dashboard')} className={`nav-item ${activePage === 'dashboard' ? 'nav-item-active' : ''}`}>{sidebarOpen ? 'DASHBOARD' : 'DB'}</button>
+          <button onClick={() => handleNavigate('customer', '/customer')} className={`nav-item ${activePage === 'customer' ? 'nav-item-active' : ''}`}>{sidebarOpen ? 'CUSTOMERS' : 'CU'}</button>
+          <button onClick={() => handleNavigate('alerts', '/alerts')} className={`nav-item ${activePage === 'alerts' ? 'nav-item-active' : ''}`}>{sidebarOpen ? 'ALERTS' : 'AL'}</button>
+          <button onClick={() => handleNavigate('network', '/network')} className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}>{sidebarOpen ? 'NETWORK' : 'NW'}</button>
+          <button onClick={() => handleNavigate('reports', '/reports')} className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}>{sidebarOpen ? 'REPORTS' : 'RP'}</button>
         </nav>
-        
-        <button onClick={handleLogout} className="logout-nav-item">
-          {sidebarOpen ? 'LOGOUT' : 'LO'}
-        </button>
+        <button onClick={handleLogout} className="logout-nav-item">{sidebarOpen ? 'LOGOUT' : 'LO'}</button>
       </div>
 
       <div className="main-wrapper" style={{ marginLeft: sidebarOpen ? '260px' : '60px' }}>
@@ -525,12 +405,8 @@ const Network = () => {
         <div className="network-legend">
           <div className="legend-title">STATS</div>
           <div className="legend-items">
-            <div className="legend-item">
-              <span>Nodes: {graphData.nodes.length}</span>
-            </div>
-            <div className="legend-item">
-              <span>Edges: {graphData.edges.length}</span>
-            </div>
+            <div className="legend-item"><span>Nodes: {graphData.nodes.length}</span></div>
+            <div className="legend-item"><span>Edges: {graphData.edges.length}</span></div>
           </div>
         </div>
 
@@ -546,11 +422,7 @@ const Network = () => {
           </div>
         </div>
 
-        {error && (
-          <div className="error-message" style={{ marginBottom: '20px' }}>
-            {error}
-          </div>
-        )}
+        {error && <div className="error-message" style={{ marginBottom: '20px' }}>{error}</div>}
 
         <div className="network-graph-container">
           {graphData.nodes.length === 0 ? (
