@@ -2,7 +2,7 @@
 
 > A simple fraud detection system built using React and Neo4j graph database
 
-**Developers:** Isaac xv¡ & just_ranks xv¡ & Matlali xv¡ & BlackBeard1-0-1 xv¡ & Tshetshe xv¡ & Mr Zulu xv¡ <br/>
+**Developers:** Isaac xv¡ & just_ranks xv¡ & Matlali xv¡ & BlackBeard1-0-1 xv¡ & Tshetshe xv¡ & Zulu xv¡ <br/>
 **Course:** Database Systems
 
 ---
