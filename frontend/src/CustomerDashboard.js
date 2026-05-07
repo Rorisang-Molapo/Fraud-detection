@@ -233,7 +233,7 @@ const CustomerDashboard = () => {
                                             <div className="activity-date">{formatDate(tx.timestamp)}</div>
                                             {tx.merchant && <div className="activity-merchant">{tx.merchant}</div>}
                                         </div>
-                                        <div className="activity-amount">-${tx.amount?.toLocaleString()}</div>
+                                        <div className="activity-amount">-M{tx.amount?.toLocaleString()}</div>
                                     </div>
                                 ))}
                             </div>
