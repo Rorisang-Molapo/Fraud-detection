@@ -332,13 +332,12 @@
   display: inline-block;
 }
 
-/* Transfer Card */
+/* Transfer Card - FULL WIDTH */
 .transfer-card {
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid #1e293b;
   border-radius: 8px;
   padding: 25px;
-  max-width: 500px;
   width: 100%;
 }
 
@@ -371,6 +370,7 @@
   font-family: 'Courier New', monospace;
   font-size: 12px;
   border-radius: 4px;
+  transition: all 0.2s;
 }
 
 .form-group select:focus,
@@ -379,8 +379,13 @@
   border-color: #3b82f6;
 }
 
+.form-group select option {
+  background: #0a0c12;
+}
+
 .search-wrapper {
   position: relative;
+  width: 100%;
 }
 
 .search-dropdown {
@@ -706,6 +711,10 @@
     padding: 20px;
   }
   
+  .transfer-card {
+    padding: 20px;
+  }
+  
   .welcome-card {
     padding: 15px;
   }
@@ -729,11 +738,6 @@
   
   .total-amount {
     font-size: 24px;
-  }
-  
-  .transfer-card {
-    padding: 20px;
-    max-width: 100%;
   }
   
   .transaction-item {
@@ -789,6 +793,39 @@
   
   .content {
     padding: 15px;
+  }
+  
+  .transfer-card {
+    padding: 15px;
+  }
+  
+  .transfer-card h2 {
+    font-size: 16px;
+    margin-bottom: 15px;
+  }
+  
+  .form-group {
+    margin-bottom: 15px;
+  }
+  
+  .form-group label {
+    font-size: 10px;
+  }
+  
+  .form-group select,
+  .form-group input {
+    padding: 8px;
+    font-size: 11px;
+  }
+  
+  .transfer-button {
+    padding: 10px;
+    font-size: 11px;
+  }
+  
+  .warning-note {
+    font-size: 9px;
+    padding: 8px;
   }
   
   .welcome-card {
@@ -886,39 +923,6 @@
     font-size: 12px;
   }
   
-  .transfer-card {
-    padding: 15px;
-  }
-  
-  .transfer-card h2 {
-    font-size: 16px;
-    margin-bottom: 15px;
-  }
-  
-  .form-group {
-    margin-bottom: 15px;
-  }
-  
-  .form-group label {
-    font-size: 10px;
-  }
-  
-  .form-group select,
-  .form-group input {
-    padding: 8px;
-    font-size: 11px;
-  }
-  
-  .transfer-button {
-    padding: 10px;
-    font-size: 11px;
-  }
-  
-  .warning-note {
-    font-size: 9px;
-    padding: 8px;
-  }
-  
   .transactions-card {
     padding: 15px;
   }
@@ -1006,6 +1010,14 @@
   .sidebar button {
     padding: 5px 10px;
     font-size: 9px;
+  }
+  
+  .transfer-card {
+    padding: 12px;
+  }
+  
+  .transfer-card h2 {
+    font-size: 14px;
   }
   
   .balance-card {
@@ -1121,4 +1133,18 @@ p, h1, h2, h3, h4, span, div, button, a {
   textarea {
     font-size: 16px;
   }
+}
+
+/* Fix select dropdown text color on all browsers */
+select option {
+  background-color: #0a0c12;
+  color: #e2e8f0;
+}
+
+/* Improve form field focus states */
+.form-group select:focus,
+.form-group input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
