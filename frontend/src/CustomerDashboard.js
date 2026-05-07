@@ -29,6 +29,8 @@ const CustomerDashboard = () => {
                 withCredentials: true
             });
             
+            console.log('Dashboard data:', response.data);
+            
             if (response.data.isAdmin) {
                 navigate('/dashboard');
                 return;
@@ -43,7 +45,7 @@ const CustomerDashboard = () => {
             }
             setLoading(false);
         } catch (error) {
-            console.error('Error:', error);
+            console.error('Error fetching dashboard:', error);
             if (error.response?.status === 401) {
                 navigate('/login');
             }
@@ -65,6 +67,7 @@ const CustomerDashboard = () => {
             const response = await axios.get(`http://localhost:5000/api/customer/search-account?q=${transferForm.toAccount}`, {
                 withCredentials: true
             });
+            console.log('Search results:', response.data);
             setSearchResults(response.data);
             setShowSearch(true);
         } catch (error) {
@@ -75,7 +78,7 @@ const CustomerDashboard = () => {
     const selectAccount = (accountNumber) => {
         setTransferForm(prev => ({
             ...prev,
-            toAccount: accountNumber
+            toAccount: accountNumber.toString()
         }));
         setShowSearch(false);
         setSearchResults([]);
@@ -83,25 +86,44 @@ const CustomerDashboard = () => {
 
     const handleTransfer = async (e) => {
         e.preventDefault();
+        
+        const fromAcc = parseInt(transferForm.fromAccount);
+        const toAcc = parseInt(transferForm.toAccount);
+        const amountNum = parseFloat(transferForm.amount);
+        
+        console.log('Transfer details:', {
+            fromAccountNumber: fromAcc,
+            toAccountNumber: toAcc,
+            amount: amountNum,
+            reference: transferForm.reference || 'Online transfer'
+        });
+        
         setTransferStatus({ type: 'info', message: 'Processing transfer...' });
         
         try {
             const response = await axios.post('http://localhost:5000/api/customer/transfer', {
-                fromAccountNumber: parseInt(transferForm.fromAccount),
-                toAccountNumber: parseInt(transferForm.toAccount),
-                amount: parseFloat(transferForm.amount),
+                fromAccountNumber: fromAcc,
+                toAccountNumber: toAcc,
+                amount: amountNum,
                 reference: transferForm.reference || 'Online transfer'
             }, { withCredentials: true });
+            
+            console.log('Transfer response:', response.data);
             
             setTransferStatus({ type: 'success', message: response.data.message });
             if (response.data.isFlagged) {
                 setTransferStatus({ type: 'warning', message: response.data.message + ' - This transaction has been flagged for review.' });
             }
+            
+            // Clear form
             setTransferForm(prev => ({ ...prev, toAccount: '', amount: '', reference: '' }));
-            fetchData();
+            
+            // Refresh data to show updated balances
+            await fetchData();
             
             setTimeout(() => setTransferStatus(null), 5000);
         } catch (error) {
+            console.error('Transfer error:', error.response?.data || error);
             setTransferStatus({ type: 'error', message: error.response?.data?.error || 'Transfer failed' });
             setTimeout(() => setTransferStatus(null), 5000);
         }
@@ -148,12 +170,6 @@ const CustomerDashboard = () => {
         <div className="customer-app">
             {/* Header */}
             <div className="customer-header">
-                {/* <button 
-                    className="menu-toggle"
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                >
-                    ☰
-                </button>                 */}
                 <div className="logo">
                     <h1>FEDERAL 20!</h1>
                     <span>Online Banking</span>
@@ -169,13 +185,13 @@ const CustomerDashboard = () => {
                 {/* Sidebar */}
                 <div className="sidebar">
                     <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
-                         Overview
+                        Overview
                     </button>
                     <button className={activeTab === 'transfer' ? 'active' : ''} onClick={() => setActiveTab('transfer')}>
                         Send Money
                     </button>
                     <button className={activeTab === 'transactions' ? 'active' : ''} onClick={() => setActiveTab('transactions')}>
-                         Transactions
+                        Transactions
                     </button>
                     <button className={activeTab === 'accounts' ? 'active' : ''} onClick={() => setActiveTab('accounts')}>
                         Accounts
@@ -202,11 +218,11 @@ const CustomerDashboard = () => {
                             <div className="balance-cards">
                                 {data.accounts?.map((acc, idx) => (
                                     <div key={idx} className="balance-card">
-                                        <div className="card-icon"></div>
+                                        <div className="card-icon">💰</div>
                                         <div className="card-info">
                                             <div className="card-type">{acc.type?.toUpperCase()} Account</div>
                                             <div className="card-number">{formatAccountNumber(acc.accountNumber)}</div>
-                                            <div className="card-balance">M{acc.balance?.toLocaleString()}</div>
+                                            <div className="card-balance">${acc.balance?.toLocaleString()}</div>
                                             {acc.isFlagged && <span className="flagged-tag">FLAGGED</span>}
                                         </div>
                                     </div>
@@ -216,26 +232,30 @@ const CustomerDashboard = () => {
                             {/* Total Balance */}
                             <div className="total-balance">
                                 <h3>Total Balance</h3>
-                                <div className="total-amount">M{data.totalBalance?.toLocaleString()}</div>
+                                <div className="total-amount">${data.totalBalance?.toLocaleString()}</div>
                             </div>
 
                             {/* Recent Activity */}
                             <div className="recent-activity">
                                 <h3>Recent Activity</h3>
-                                {data.recentTransactions?.slice(0, 5).map((tx, idx) => (
-                                    <div key={idx} className="activity-item">
-                                        <div className="activity-icon">{tx.type === 'transfer' ? '💸' : '🛒'}</div>
-                                        <div className="activity-details">
-                                            <div className="activity-title">
-                                                {tx.type === 'transfer' ? 'Money Transfer' : 'Purchase'}
-                                                {tx.isFlagged && <span className="flagged-badge-small">Flagged</span>}
+                                {data.recentTransactions && data.recentTransactions.length > 0 ? (
+                                    data.recentTransactions.slice(0, 5).map((tx, idx) => (
+                                        <div key={idx} className="activity-item">
+                                            <div className="activity-icon">{tx.type === 'transfer' ? '💸' : '🛒'}</div>
+                                            <div className="activity-details">
+                                                <div className="activity-title">
+                                                    {tx.type === 'transfer' ? 'Money Transfer' : 'Purchase'}
+                                                    {tx.isFlagged && <span className="flagged-badge-small">Flagged</span>}
+                                                </div>
+                                                <div className="activity-date">{formatDate(tx.timestamp)}</div>
+                                                {tx.merchant && <div className="activity-merchant">{tx.merchant}</div>}
                                             </div>
-                                            <div className="activity-date">{formatDate(tx.timestamp)}</div>
-                                            {tx.merchant && <div className="activity-merchant">{tx.merchant}</div>}
+                                            <div className="activity-amount">-${tx.amount?.toLocaleString()}</div>
                                         </div>
-                                        <div className="activity-amount">-M{tx.amount?.toLocaleString()}</div>
-                                    </div>
-                                ))}
+                                    ))
+                                ) : (
+                                    <div className="no-data">No recent transactions</div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -257,7 +277,7 @@ const CustomerDashboard = () => {
                                     <select name="fromAccount" value={transferForm.fromAccount} onChange={handleTransferChange} required>
                                         {data.accounts?.map((acc, idx) => (
                                             <option key={idx} value={acc.accountNumber}>
-                                                {acc.type} - {formatAccountNumber(acc.accountNumber)} (${acc.balance?.toLocaleString()})
+                                                {acc.type?.toUpperCase()} - {formatAccountNumber(acc.accountNumber)} (${acc.balance?.toLocaleString()})
                                             </option>
                                         ))}
                                     </select>
@@ -281,7 +301,7 @@ const CustomerDashboard = () => {
                                                     <div key={idx} className="search-item" onClick={() => selectAccount(acc.accountNumber)}>
                                                         <span>Account: {acc.accountNumber}</span>
                                                         <span>Owner: {acc.ownerName}</span>
-                                                        <span className={`status-${acc.status}`}>{acc.status}</span>
+                                                        <span>{acc.type}</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -318,7 +338,7 @@ const CustomerDashboard = () => {
                             </form>
                             
                             <div className="warning-note">
-                                Transfers over M10,000 will be flagged for security review.
+                                Transfers over $10,000 will be flagged for security review.
                             </div>
                         </div>
                     )}
@@ -329,20 +349,24 @@ const CustomerDashboard = () => {
                             <h2>Transaction History</h2>
                             
                             <div className="transaction-list">
-                                {data.recentTransactions?.map((tx, idx) => (
-                                    <div key={idx} className="transaction-item">
-                                        <div>
-                                            <div className="transaction-id">{tx.id}</div>
-                                            <div className="transaction-type">
-                                                {tx.type?.toUpperCase()}
-                                                {tx.isFlagged && <span className="flagged-badge-small">Flagged</span>}
+                                {data.recentTransactions && data.recentTransactions.length > 0 ? (
+                                    data.recentTransactions.map((tx, idx) => (
+                                        <div key={idx} className="transaction-item">
+                                            <div>
+                                                <div className="transaction-id">{tx.id}</div>
+                                                <div className="transaction-type">
+                                                    {tx.type?.toUpperCase()}
+                                                    {tx.isFlagged && <span className="flagged-badge-small">Flagged</span>}
+                                                </div>
+                                                <div className="transaction-date">{formatDate(tx.timestamp)}</div>
+                                                {tx.location && <div className="transaction-location">📍 {tx.location}</div>}
                                             </div>
-                                            <div className="transaction-date">{formatDate(tx.timestamp)}</div>
-                                            {tx.location && <div className="transaction-location">📍 {tx.location}</div>}
+                                            <div className="transaction-amount">${tx.amount?.toLocaleString()}</div>
                                         </div>
-                                        <div className="transaction-amount">${tx.amount?.toLocaleString()}</div>
-                                    </div>
-                                ))}
+                                    ))
+                                ) : (
+                                    <div className="no-data">No transactions found</div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -356,7 +380,9 @@ const CustomerDashboard = () => {
                                 <div key={idx} className="account-detail">
                                     <div className="account-header">
                                         <h3>{acc.type?.toUpperCase()} Account</h3>
-                                        <span className={`status-badge ${acc.status}`}>{acc.status?.toUpperCase()}</span>
+                                        <span className={`status-badge ${acc.isFlagged ? 'status-flagged' : 'status-active'}`}>
+                                            {acc.isFlagged ? 'FLAGGED' : 'ACTIVE'}
+                                        </span>
                                     </div>
                                     <div className="account-number">Account Number: {acc.accountNumber}</div>
                                     <div className="account-balance">Balance: ${acc.balance?.toLocaleString()}</div>
