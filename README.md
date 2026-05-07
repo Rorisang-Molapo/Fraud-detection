@@ -62,7 +62,7 @@ NEO4J_PASSWORD=yourpassword
 ---
 
 
-## GraphQL Status
+## CodeQL Status
 [![CodeQL Advanced](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml/badge.svg)](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml)
 
 <br/>
