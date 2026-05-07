@@ -61,6 +61,5 @@ NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=yourpassword
 ```
 ## start your application.
----
 
-## FEDERAL 20! TO THE WORLD © 2026
+##  FEDERAL 20! TO THE WORLD © 2026
