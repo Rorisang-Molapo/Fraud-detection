@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import backgroundImage from './Images/image.png';
 
+
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -14,6 +15,7 @@ const Login = ({ onLogin }) => {
     setLoading(true);
 
     try {
+
       const response = await axios.post('http://localhost:5000/api/login', {
         username,
         password
@@ -50,7 +52,10 @@ const Login = ({ onLogin }) => {
         </svg>
       </div>
 
-      <div style={styles.header}>
+     
+//======...
+
+ <div style={styles.header}>
         <div style={styles.iconContainer}>
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
