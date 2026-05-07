@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { Network as VisNetwork } from 'vis-network';
@@ -13,6 +13,9 @@ const Network = () => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [filter, setFilter] = useState('ALL');
   const [error, setError] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [maxTransactions, setMaxTransactions] = useState(50);
+  const [maxTransferEdges, setMaxTransferEdges] = useState(100);
   const containerRef = useRef(null);
   const networkInstanceRef = useRef(null);
 
@@ -24,7 +27,7 @@ const Network = () => {
     if (!loading && graphData.nodes.length > 0) {
       drawGraph();
     }
-  }, [loading, graphData, filter]);
+  }, [loading, graphData, filter, maxTransactions, maxTransferEdges]);
 
   const fetchNetworkData = async () => {
     try {
@@ -33,7 +36,9 @@ const Network = () => {
       });
       
       if (response.data && response.data.nodes && response.data.edges) {
-        setGraphData(response.data);
+        // Limit the data for better performance
+        const limitedData = limitGraphData(response.data, maxTransactions, maxTransferEdges);
+        setGraphData(limitedData);
       } else {
         setGraphData({ nodes: [], edges: [] });
         setError('No network data found in database');
@@ -44,10 +49,95 @@ const Network = () => {
       if (error.response?.status === 401) {
         navigate('/login');
       } else {
-        setError('Failed to load network data. Pleasure ensure that your database instance is running ');
+        setError('Failed to load network data. Please ensure that your database instance is running');
       }
       setLoading(false);
     }
+  };
+
+  // NEW: Limit graph data for performance
+  const limitGraphData = (data, maxTrans, maxTransfers) => {
+    if (!data || !data.nodes || !data.edges) return data;
+    
+    // Separate nodes by type
+    const customers = data.nodes.filter(n => n.type === 'Customer');
+    const accounts = data.nodes.filter(n => n.type === 'Account');
+    const transactions = data.nodes.filter(n => n.type === 'Transaction').slice(0, maxTrans);
+    const devices = data.nodes.filter(n => n.type === 'Device');
+    const ipAddresses = data.nodes.filter(n => n.type === 'IPAddress');
+    const locations = data.nodes.filter(n => n.type === 'Location');
+    
+    // Get transaction IDs that are included
+    const transactionIds = new Set(transactions.map(t => t.id));
+    
+    // Filter edges to only those connected to included transactions
+    let filteredEdges = data.edges.filter(e => {
+      // Keep edges that connect to included transactions
+      if (transactionIds.has(e.source) || transactionIds.has(e.target)) {
+        return true;
+      }
+      return false;
+    });
+    
+    // Limit TRANSFERRED_TO edges
+    const transferEdges = filteredEdges.filter(e => e.relationship === 'TRANSFERRED_TO');
+    const otherEdges = filteredEdges.filter(e => e.relationship !== 'TRANSFERRED_TO');
+    
+    // Take most recent transfers by amount or limit
+    const sortedTransfers = [...transferEdges].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+    const limitedTransfers = sortedTransfers.slice(0, maxTransfers);
+    
+    const finalEdges = [...otherEdges, ...limitedTransfers];
+    
+    // Get all node IDs that are still connected
+    const connectedNodeIds = new Set();
+    finalEdges.forEach(e => {
+      connectedNodeIds.add(e.source);
+      connectedNodeIds.add(e.target);
+    });
+    
+    // Also include all customers and accounts (they're important for context)
+    customers.forEach(c => connectedNodeIds.add(c.id));
+    accounts.forEach(a => connectedNodeIds.add(a.id));
+    
+    // Filter nodes
+    const finalNodes = data.nodes.filter(n => connectedNodeIds.has(n.id));
+    
+    return { nodes: finalNodes, edges: finalEdges };
+  };
+
+  // NEW: Aggregate multiple transfers between same accounts
+  const aggregateTransferEdges = (edges) => {
+    const transferMap = new Map();
+    const otherEdges = [];
+    
+    edges.forEach(edge => {
+      if (edge.relationship === 'TRANSFERRED_TO') {
+        const key = `${edge.source}_${edge.target}`;
+        if (transferMap.has(key)) {
+          const existing = transferMap.get(key);
+          existing.count = (existing.count || 1) + 1;
+          existing.totalAmount = (existing.totalAmount || existing.amount) + edge.amount;
+          existing.lastAmount = edge.amount;
+          existing.lastTimestamp = edge.timestamp;
+        } else {
+          transferMap.set(key, { ...edge, count: 1, totalAmount: edge.amount });
+        }
+      } else {
+        otherEdges.push(edge);
+      }
+    });
+    
+    // Convert back to edges with aggregated info
+    const aggregatedTransfers = Array.from(transferMap.values()).map(transfer => ({
+      ...transfer,
+      label: transfer.count > 1 ? `${transfer.count}x transfers` : `$${transfer.amount?.toLocaleString()}`,
+      title: `Total: $${transfer.totalAmount?.toLocaleString()} over ${transfer.count} transfers`,
+      amount: transfer.totalAmount,
+      width: Math.min(5, 2 + (transfer.count / 5))
+    }));
+    
+    return [...otherEdges, ...aggregatedTransfers];
   };
 
   const getNodeColor = (type, isFlagged, riskScore) => {
@@ -106,20 +196,23 @@ const Network = () => {
     }
 
     let nodesToShow = graphData.nodes;
-    let edgesToShow = graphData.edges;
+    let edgesToShow = [...graphData.edges];
+    
+    // Aggregate multiple transfers for cleaner visualization
+    edgesToShow = aggregateTransferEdges(edgesToShow);
 
     if (filter === 'SUSPICIOUS') {
       const suspiciousIds = graphData.nodes
         .filter(n => n.isFlagged || (n.riskScore && n.riskScore >= 15))
         .map(n => n.id);
       nodesToShow = graphData.nodes.filter(n => suspiciousIds.includes(n.id));
-      edgesToShow = graphData.edges.filter(e => 
+      edgesToShow = edgesToShow.filter(e => 
         suspiciousIds.includes(e.source) && suspiciousIds.includes(e.target)
       );
     } else if (filter !== 'ALL') {
       nodesToShow = graphData.nodes.filter(n => n.type === filter);
       const nodeIds = new Set(nodesToShow.map(n => n.id));
-      edgesToShow = graphData.edges.filter(e => 
+      edgesToShow = edgesToShow.filter(e => 
         nodeIds.has(e.source) && nodeIds.has(e.target)
       );
     }
@@ -129,7 +222,7 @@ const Network = () => {
       return {
         id: node.id,
         label: node.label.length > 25 ? node.label.substring(0, 22) + '...' : node.label,
-        title: `${node.type}\n${node.label}\n${node.riskScore ? 'Risk Score: ' + node.riskScore : ''}${node.amount ? 'Amount: M' + node.amount.toLocaleString() : ''}${node.isFlagged ? '\nFLAGGED' : ''}`,
+        title: `${node.type}\n${node.label}\n${node.riskScore ? 'Risk Score: ' + node.riskScore : ''}${node.amount ? 'Amount: $' + node.amount.toLocaleString() : ''}${node.isFlagged ? '\nFLAGGED' : ''}`,
         color: {
           background: colors.background,
           border: colors.border,
@@ -149,14 +242,15 @@ const Network = () => {
       };
     });
 
-    const visEdges = edgesToShow.map(edge => {
+    // Create unique IDs for all edges
+    const visEdges = edgesToShow.map((edge, idx) => {
       let color = '#64748b';
-      let width = 1;
+      let width = edge.width || 1;
       let dashes = false;
       
       if (edge.relationship === 'TRANSFERRED_TO') {
         color = '#f59e0b';
-        width = 2;
+        width = Math.min(5, edge.width || (edge.amount > 20000 ? 4 : edge.amount > 10000 ? 3 : 2));
       }
       if (edge.relationship === 'MADE') {
         color = '#a78bfa';
@@ -173,18 +267,16 @@ const Network = () => {
       if (edge.relationship === 'OCCURRED_AT') {
         color = '#ec489a';
       }
-      if (edge.amount && edge.amount > 5000) {
-        width = 3;
-      }
 
-
-
+      // Simple unique ID using index (sufficient since we deduplicated)
+      const uniqueId = `edge_${idx}_${Date.now()}`;
+      
       return {
-        id: `${edge.source}_${edge.target}_${edge.relationship}`,
+        id: uniqueId,
         from: edge.source,
         to: edge.target,
-        label: edge.relationship === 'TRANSFERRED_TO' && edge.amount ? `M${edge.amount.toLocaleString()}` : '',
-        title: `${edge.relationship}${edge.amount ? '\nAmount: M' + edge.amount.toLocaleString() : ''}`,
+        label: edge.label || (edge.relationship === 'TRANSFERRED_TO' && edge.amount ? `$${edge.amount.toLocaleString()}` : ''),
+        title: edge.title || `${edge.relationship}${edge.amount ? '\nAmount: $' + edge.amount.toLocaleString() : ''}${edge.count ? `\n${edge.count} total transfers` : ''}`,
         color: color,
         width: width,
         dashes: dashes,
@@ -205,7 +297,6 @@ const Network = () => {
           }
         }
       };
-
     });
 
     const options = {
@@ -253,7 +344,7 @@ const Network = () => {
       physics: {
         enabled: true,
         stabilization: {
-          iterations: 100,
+          iterations: 50,
           fit: true
         },
         barnesHut: {
@@ -277,28 +368,30 @@ const Network = () => {
     };
 
     const data = { nodes: visNodes, edges: visEdges };
-    networkInstanceRef.current = new VisNetwork(containerRef.current, data, options);
+    
+    try {
+      networkInstanceRef.current = new VisNetwork(containerRef.current, data, options);
 
-    networkInstanceRef.current.on('click', (params) => {
-      if (params.nodes.length > 0) {
-        const nodeId = params.nodes[0];
-        const clickedNode = graphData.nodes.find(n => n.id === nodeId);
-        if (clickedNode) {
-          setSelectedNode(clickedNode);
+      networkInstanceRef.current.on('click', (params) => {
+        if (params.nodes.length > 0) {
+          const nodeId = params.nodes[0];
+          const clickedNode = graphData.nodes.find(n => n.id === nodeId);
+          if (clickedNode) {
+            setSelectedNode(clickedNode);
+          }
+        } else {
+          setSelectedNode(null);
         }
-      } else {
-        setSelectedNode(null);
-      }
-    });
+      });
+    } catch (err) {
+      console.error('Error creating network graph:', err);
+      setError('Error rendering graph: ' + err.message);
+    }
+  };
 
-    networkInstanceRef.current.on('hoverNode', (params) => {
-      const node = graphData.nodes.find(n => n.id === params.node);
-      if (node && (node.isFlagged || (node.riskScore && node.riskScore >= 15))) {
-        if (networkInstanceRef.current) {
-          networkInstanceRef.current.canvas.body.container.style.cursor = 'pointer';
-        }
-      }
-    });
+  const handleRefresh = () => {
+    setLoading(true);
+    fetchNetworkData();
   };
 
   const handleNavigate = (page, path) => {
@@ -342,7 +435,6 @@ const Network = () => {
         </svg>
       </div>
 
-      {/* Sidebar */}
       <div className="sidebar" style={{ width: sidebarOpen ? '260px' : '60px' }}>
         <div className="sidebar-header">
           {sidebarOpen && <h2 className="sidebar-title">FEDERAL 20!</h2>}
@@ -352,38 +444,19 @@ const Network = () => {
         </div>
         
         <nav className="sidebar-nav">
-          <button 
-            onClick={() => handleNavigate('dashboard', '/dashboard')} 
-            className={`nav-item ${activePage === 'dashboard' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('dashboard', '/dashboard')} className={`nav-item ${activePage === 'dashboard' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'DASHBOARD' : 'DB'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('customer', '/customer')} 
-            className={`nav-item ${activePage === 'customer' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('customer', '/customer')} className={`nav-item ${activePage === 'customer' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'CUSTOMERS' : 'CU'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('alerts', '/alerts')} 
-            className={`nav-item ${activePage === 'alerts' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('alerts', '/alerts')} className={`nav-item ${activePage === 'alerts' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'ALERTS' : 'AL'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('network', '/network')} 
-            className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('network', '/network')} className={`nav-item ${activePage === 'network' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'NETWORK' : 'NW'}
           </button>
-          
-          <button 
-            onClick={() => handleNavigate('reports', '/reports')} 
-            className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}
-          >
+          <button onClick={() => handleNavigate('reports', '/reports')} className={`nav-item ${activePage === 'reports' ? 'nav-item-active' : ''}`}>
             {sidebarOpen ? 'REPORTS' : 'RP'}
           </button>
         </nav>
@@ -393,9 +466,7 @@ const Network = () => {
         </button>
       </div>
 
-      {/* Main Content */}
       <div className="main-wrapper" style={{ marginLeft: sidebarOpen ? '260px' : '60px' }}>
-        {/* Header */}
         <div className="header">
           <div className="header-left">
             <div className="header-icon">
@@ -414,179 +485,78 @@ const Network = () => {
           </div>
         </div>
 
-        {/* Network Controls */}
         <div className="network-controls">
           <div className="filter-section">
             <label className="filter-label">FILTER BY:</label>
             <div className="filter-buttons">
-              <button 
-                className={`filter-btn ${filter === 'ALL' ? 'active' : ''}`}
-                onClick={() => setFilter('ALL')}
-              >
-                ALL
-              </button>
-              <button 
-                className={`filter-btn ${filter === 'Customer' ? 'active' : ''}`}
-                onClick={() => setFilter('Customer')}
-              >
-                CUSTOMERS
-              </button>
-              <button 
-                className={`filter-btn ${filter === 'Account' ? 'active' : ''}`}
-                onClick={() => setFilter('Account')}
-              >
-                ACCOUNTS
-              </button>
-              <button 
-                className={`filter-btn ${filter === 'Transaction' ? 'active' : ''}`}
-                onClick={() => setFilter('Transaction')}
-              >
-                TRANSACTIONS
-              </button>
-              <button 
-                className={`filter-btn ${filter === 'Device' ? 'active' : ''}`}
-                onClick={() => setFilter('Device')}
-              >
-                DEVICES
-              </button>
-              <button 
-                className={`filter-btn ${filter === 'IPAddress' ? 'active' : ''}`}
-                onClick={() => setFilter('IPAddress')}
-              >
-                IP ADDRESSES
-              </button>
-              <button 
-                className={`filter-btn ${filter === 'SUSPICIOUS' ? 'active' : ''}`}
-                onClick={() => setFilter('SUSPICIOUS')}
-              >
-                SUSPICIOUS ONLY
-              </button>
+              <button className={`filter-btn ${filter === 'ALL' ? 'active' : ''}`} onClick={() => setFilter('ALL')}>ALL</button>
+              <button className={`filter-btn ${filter === 'Customer' ? 'active' : ''}`} onClick={() => setFilter('Customer')}>CUSTOMERS</button>
+              <button className={`filter-btn ${filter === 'Account' ? 'active' : ''}`} onClick={() => setFilter('Account')}>ACCOUNTS</button>
+              <button className={`filter-btn ${filter === 'Transaction' ? 'active' : ''}`} onClick={() => setFilter('Transaction')}>TRANSACTIONS</button>
+              <button className={`filter-btn ${filter === 'SUSPICIOUS' ? 'active' : ''}`} onClick={() => setFilter('SUSPICIOUS')}>SUSPICIOUS ONLY</button>
+            </div>
+            <button className="filter-btn" onClick={handleRefresh} style={{ marginLeft: 'auto' }}>REFRESH</button>
+          </div>
+        </div>
+
+        <div className="network-legend">
+          <div className="legend-title">STATS</div>
+          <div className="legend-items">
+            <div className="legend-item">
+              <span>Nodes: {graphData.nodes.length}</span>
+            </div>
+            <div className="legend-item">
+              <span>Edges: {graphData.edges.length}</span>
             </div>
           </div>
         </div>
 
-        {/* Legend */}
         <div className="network-legend">
           <div className="legend-title">LEGEND</div>
           <div className="legend-items">
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#60a5fa' }}></div>
-              <span>Customer (Low Risk - Score 0-14)</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#f59e0b' }}></div>
-              <span>Customer (Medium Risk - Score 15-29)</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#ef4444' }}></div>
-              <span>Customer (High Risk - Score 30+) / Flagged</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#10b981' }}></div>
-              <span>Account (Normal)</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#a78bfa' }}></div>
-              <span>Transaction</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#f97316' }}></div>
-              <span>Device</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#06b6d4' }}></div>
-              <span>IP Address</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#ec489a' }}></div>
-              <span>Location</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#f59e0b' }}></div>
-              <span>Money Transfer (TRANSFERRED_TO)</span>
-            </div>
-          </div>
-          <div className="legend-hint">
-            <span>Tip: Click on any node to view details | Drag to pan | Scroll to zoom</span>
+            <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#60a5fa' }}></div><span>Customer (Low Risk)</span></div>
+            <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#f59e0b' }}></div><span>Customer (Medium Risk)</span></div>
+            <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#ef4444' }}></div><span>Customer (High Risk) / Flagged</span></div>
+            <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#10b981' }}></div><span>Account (Normal)</span></div>
+            <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#a78bfa' }}></div><span>Transaction</span></div>
+            <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#f59e0b' }}></div><span>Money Transfer</span></div>
           </div>
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="error-message" style={{ marginBottom: '20px' }}>
             {error}
           </div>
         )}
 
-        {/* Network Graph Container */}
         <div className="network-graph-container">
           {graphData.nodes.length === 0 ? (
             <div className="graph-placeholder">
               <div className="graph-placeholder-icon">NO DATA FOUND</div>
-              <div className="graph-placeholder-text">
-                No network data available in the database.
-              </div>
-              <div className="graph-placeholder-list">
-                <div>• Please ensure Neo4j is running</div>
-                <div>• Verify that customers, accounts, and transactions exist</div>
-                <div>• Check relationships between entities</div>
-              </div>
+              <div className="graph-placeholder-text">No network data available in the database.</div>
             </div>
           ) : (
-            <div 
-              ref={containerRef} 
-              style={{ 
-                width: '100%', 
-                height: '600px', 
-                backgroundColor: 'rgba(10, 12, 18, 0.9)',
-                borderRadius: '8px',
-                border: '1px solid #1e293b'
-              }} 
-            />
+            <div ref={containerRef} style={{ width: '100%', height: '600px', backgroundColor: 'rgba(10, 12, 18, 0.9)', borderRadius: '8px', border: '1px solid #1e293b' }} />
           )}
         </div>
 
-        {/* Selected Node Details */}
         {selectedNode && (
           <div className="selected-node-panel">
             <div className="selected-node-header">
               <h3>NODE DETAILS</h3>
-              <button className="close-panel" onClick={() => setSelectedNode(null)}>X</button>
+              <button className="close-panel" onClick={() => setSelectedNode(null)}>×</button>
             </div>
             <div className="selected-node-content">
-              <div className="node-detail-row">
-                <span className="node-detail-label">Type:</span>
-                <span className="node-detail-value">{selectedNode.type}</span>
-              </div>
-              <div className="node-detail-row">
-                <span className="node-detail-label">ID/Label:</span>
-                <span className="node-detail-value">{selectedNode.label}</span>
-              </div>
+              <div className="node-detail-row"><span className="node-detail-label">Type:</span><span className="node-detail-value">{selectedNode.type}</span></div>
+              <div className="node-detail-row"><span className="node-detail-label">ID/Label:</span><span className="node-detail-value">{selectedNode.label}</span></div>
               {selectedNode.riskScore !== undefined && selectedNode.riskScore !== null && (
-                <div className="node-detail-row">
-                  <span className="node-detail-label">Risk Score:</span>
-                  <span className={`node-detail-value ${selectedNode.riskScore >= 30 ? 'risk-critical' : selectedNode.riskScore >= 15 ? 'risk-high' : 'risk-normal'}`}>
-                    {selectedNode.riskScore}
-                  </span>
-                </div>
+                <div className="node-detail-row"><span className="node-detail-label">Risk Score:</span><span className="node-detail-value">{selectedNode.riskScore}</span></div>
               )}
               {selectedNode.amount !== undefined && selectedNode.amount !== null && (
-                <div className="node-detail-row">
-                  <span className="node-detail-label">Amount:</span>
-                  <span className="node-detail-value">${selectedNode.amount.toLocaleString()}</span>
-                </div>
+                <div className="node-detail-row"><span className="node-detail-label">Amount:</span><span className="node-detail-value">${selectedNode.amount.toLocaleString()}</span></div>
               )}
               {selectedNode.isFlagged && (
-                <div className="node-detail-row">
-                  <span className="node-detail-label">Status:</span>
-                  <span className="node-detail-value status-flagged">FLAGGED</span>
-                </div>
-              )}
-              {selectedNode.status && (
-                <div className="node-detail-row">
-                  <span className="node-detail-label">Account Status:</span>
-                  <span className="node-detail-value">{selectedNode.status}</span>
-                </div>
+                <div className="node-detail-row"><span className="node-detail-label">Status:</span><span className="node-detail-value status-flagged">FLAGGED</span></div>
               )}
             </div>
           </div>
