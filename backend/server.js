@@ -22,20 +22,15 @@ const driver = neo4j.driver(
     process.env.NEO4J_URI,
     neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD)
 );
-// fixing errors
+
 function toNativeNumber(value) {
     if (value == null) return 0;
-
-    // Neo4j Integer object
     if (typeof value === 'object' && typeof value.toNumber === 'function') {
         return value.toNumber();
     }
-
-    // Already normal JS number
     return Number(value);
 }
 
-// Auth middleware
 const requireAuth = (req, res, next) => {
     if (req.session.user && req.session.user.loggedIn) {
         next();
@@ -44,37 +39,57 @@ const requireAuth = (req, res, next) => {
     }
 };
 
-// AUTHENTICATION ENDPOINTS 
+
+// AUTHENTICATION ENDPOINTS
 
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const neo4jSession = driver.session();
     try {
-        const result = await neo4jSession.run(
-            `MATCH (u:User {username: $username, password: $password}) 
-             RETURN u.username AS username, u.role AS role, u.customerId AS customerId`,
+        // Check admin first
+        const adminResult = await neo4jSession.run(
+            `MATCH (a:Admin {username: $username, password: $password}) 
+             RETURN a.username AS username, 'admin' AS role, null AS customerId`,
             { username, password }
         );
         
-        if (result.records.length > 0) {
-            const role = result.records[0].get('role') || 'customer';
-            const customerId = result.records[0].get('customerId');
-            
+        if (adminResult.records.length > 0) {
             req.session.user = {
-                username: result.records[0].get('username'),
-                role: role,
-                customerId: customerId,
+                username: adminResult.records[0].get('username'),
+                role: 'admin',
+                customerId: null,
                 loggedIn: true
             };
-            
-            res.json({ 
+            return res.json({ 
                 success: true, 
-                role: role,
-                redirect: role === 'admin' ? '/dashboard' : '/customer-dashboard'
+                role: 'admin',
+                redirect: '/dashboard'
             });
-        } else {
-            res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
+        
+        // Check customer
+        const customerResult = await neo4jSession.run(
+            `MATCH (c:Customer {username: $username, password: $password}) 
+             RETURN c.username AS username, 'customer' AS role, c.id AS customerId`,
+            { username, password }
+        );
+        
+        if (customerResult.records.length > 0) {
+            req.session.user = {
+                username: customerResult.records[0].get('username'),
+                role: 'customer',
+                customerId: customerResult.records[0].get('customerId'),
+                loggedIn: true
+            };
+            return res.json({ 
+                success: true, 
+                role: 'customer',
+                redirect: '/customer-dashboard'
+            });
+        }
+        
+        res.status(401).json({ success: false, message: 'Invalid credentials' });
+        
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -99,7 +114,8 @@ app.post('/api/logout', (req, res) => {
     res.json({ success: true });
 });
 
-// DASHBOARD ENDPOINTS 
+// DASHBOARD ENDPOINTS
+
 
 app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -108,7 +124,7 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
             MATCH (c:Customer) WITH COUNT(c) AS totalCustomers
             MATCH (t:Transaction) WITH totalCustomers, COUNT(t) AS totalTransactions
             MATCH (t2:Transaction {isFlagged: true}) WITH totalCustomers, totalTransactions, COUNT(t2) AS flaggedTransactions
-            MATCH (c2:Customer) WHERE c2.status = 'high_risk' OR c2.riskScore >= 15 WITH totalCustomers, totalTransactions, flaggedTransactions, COUNT(c2) AS highRiskCustomers
+            MATCH (c2:Customer) WHERE c2.riskScore >= 15 WITH totalCustomers, totalTransactions, flaggedTransactions, COUNT(c2) AS highRiskCustomers
             OPTIONAL MATCH (:Account)-[r:TRANSFERRED_TO]->(:Account) WITH totalCustomers, totalTransactions, flaggedTransactions, highRiskCustomers, COALESCE(SUM(r.amount), 0) AS totalTransferAmount
             MATCH (c3:Customer) RETURN totalCustomers, totalTransactions, flaggedTransactions, highRiskCustomers, totalTransferAmount, COALESCE(AVG(c3.riskScore), 0) AS avgRiskScore
         `);
@@ -133,14 +149,13 @@ app.get('/api/dashboard/high-risk-alerts', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
         const result = await session.run(`
-            MATCH (c:Customer) WHERE c.riskScore >= 15 OR c.status = 'medium_risk' OR c.status = 'high_risk'
-            RETURN c.id AS id, c.name AS name, c.riskScore AS riskScore, c.status AS status ORDER BY c.riskScore DESC LIMIT 10
+            MATCH (c:Customer) WHERE c.riskScore >= 15
+            RETURN c.id AS id, c.name AS name, c.riskScore AS riskScore ORDER BY c.riskScore DESC LIMIT 10
         `);
         const alerts = result.records.map(record => ({
             id: record.get('id'),
             name: record.get('name'),
-            riskScore: toNativeNumber(record.get('riskScore')),
-            status: record.get('status')
+            riskScore: toNativeNumber(record.get('riskScore'))
         }));
         res.json(alerts);
     } catch (error) {
@@ -156,9 +171,9 @@ app.get('/api/dashboard/risk-distribution', requireAuth, async (req, res) => {
     try {
         const result = await session.run(`
             MATCH (c:Customer) RETURN 
-                SUM(CASE WHEN c.riskScore >= 30 OR c.status = 'high_risk' THEN 1 ELSE 0 END) AS high,
-                SUM(CASE WHEN c.riskScore >= 15 AND c.riskScore < 30 OR c.status = 'medium_risk' THEN 1 ELSE 0 END) AS medium,
-                SUM(CASE WHEN c.riskScore < 15 OR c.riskScore = 0 THEN 1 ELSE 0 END) AS low
+                SUM(CASE WHEN c.riskScore >= 30 THEN 1 ELSE 0 END) AS high,
+                SUM(CASE WHEN c.riskScore >= 15 AND c.riskScore < 30 THEN 1 ELSE 0 END) AS medium,
+                SUM(CASE WHEN c.riskScore < 15 THEN 1 ELSE 0 END) AS low
         `);
         const record = result.records[0];
         res.json({
@@ -175,13 +190,12 @@ app.get('/api/dashboard/risk-distribution', requireAuth, async (req, res) => {
 });
 
 // CUSTOMER MANAGEMENT 
-
 app.get('/api/customers', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
         const result = await session.run(`
             MATCH (c:Customer) RETURN c.id AS id, c.name AS name, c.email AS email, c.phone AS phone, 
-            c.riskScore AS riskScore, c.status AS status, c.joinDate AS joinDate ORDER BY c.id
+            c.riskScore AS riskScore, c.joinDate AS joinDate ORDER BY c.id
         `);
         const customers = result.records.map(record => ({
             id: record.get('id'),
@@ -189,7 +203,6 @@ app.get('/api/customers', requireAuth, async (req, res) => {
             email: record.get('email'),
             phone: record.get('phone'),
             riskScore: toNativeNumber(record.get('riskScore')),
-            status: record.get('status'),
             joinDate: record.get('joinDate')
         }));
         res.json(customers);
@@ -208,7 +221,7 @@ app.get('/api/customers/search', requireAuth, async (req, res) => {
         const result = await session.run(`
             MATCH (c:Customer) WHERE c.id CONTAINS $q OR c.name CONTAINS $q OR c.email CONTAINS $q OR c.phone CONTAINS $q
             RETURN c.id AS id, c.name AS name, c.email AS email, c.phone AS phone, 
-            c.riskScore AS riskScore, c.status AS status, c.joinDate AS joinDate ORDER BY c.id
+            c.riskScore AS riskScore, c.joinDate AS joinDate ORDER BY c.id
         `, { q });
         const customers = result.records.map(record => ({
             id: record.get('id'),
@@ -216,7 +229,6 @@ app.get('/api/customers/search', requireAuth, async (req, res) => {
             email: record.get('email'),
             phone: record.get('phone'),
             riskScore: toNativeNumber(record.get('riskScore')),
-            status: record.get('status'),
             joinDate: record.get('joinDate')
         }));
         res.json(customers);
@@ -234,20 +246,19 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
     try {
         const customerResult = await session.run(`
             MATCH (c:Customer {id: $id}) RETURN c.id AS id, c.name AS name, c.email AS email, c.phone AS phone, 
-            c.riskScore AS riskScore, c.status AS status, c.joinDate AS joinDate
+            c.riskScore AS riskScore, c.joinDate AS joinDate
         `, { id });
         if (customerResult.records.length === 0) return res.status(404).json({ error: 'Customer not found' });
         const customer = customerResult.records[0];
 
         const accountsResult = await session.run(`
             MATCH (c:Customer {id: $id})-[:OWNS]->(a:Account)
-            RETURN a.accountNumber AS accountNumber, a.type AS type, a.balance AS balance, a.status AS status, a.isFlagged AS isFlagged
+            RETURN a.accountNumber AS accountNumber, a.type AS type, a.balance AS balance, a.isFlagged AS isFlagged
         `, { id });
         const accounts = accountsResult.records.map(record => ({
             accountNumber: toNativeNumber(record.get('accountNumber')),
             type: record.get('type'),
             balance: toNativeNumber(record.get('balance')),
-            status: record.get('status'),
             isFlagged: record.get('isFlagged')
         }));
 
@@ -270,7 +281,6 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
             email: customer.get('email'),
             phone: customer.get('phone'),
             riskScore: toNativeNumber(customer.get('riskScore')),
-            status: customer.get('status'),
             joinDate: customer.get('joinDate'),
             accounts, transactions
         });
@@ -282,7 +292,7 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
     }
 });
 
-// FRAUD ALERTS 
+// FRAUD ALERTS
 
 app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -307,8 +317,8 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
         });
 
         const riskCustomerResult = await session.run(`
-            MATCH (c:Customer) WHERE c.riskScore >= 15 OR c.status = 'medium_risk' OR c.status = 'high_risk'
-            RETURN c.name AS name, c.id AS id, c.riskScore AS riskScore, c.status AS status ORDER BY c.riskScore DESC
+            MATCH (c:Customer) WHERE c.riskScore >= 15
+            RETURN c.name AS name, c.id AS id, c.riskScore AS riskScore ORDER BY c.riskScore DESC
         `);
         riskCustomerResult.records.forEach(record => {
             const riskScore = toNativeNumber(record.get('riskScore'));
@@ -319,7 +329,7 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
                 id: 'RISK_CUST_' + record.get('id'),
                 type: 'HIGH_RISK_CUSTOMER',
                 severity: severity,
-                message: `Customer ${record.get('name')} has risk score ${riskScore} (${record.get('status')})`,
+                message: `Customer ${record.get('name')} has risk score ${riskScore}`,
                 customer: record.get('name'),
                 timestamp: new Date().toISOString(),
                 riskScore: riskScore
@@ -355,18 +365,17 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     }
 });
 
-//NETWORK VISUALIZATION 
-
+// NETWORK VISUALIZATION
 app.get('/api/network/data', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
         const nodesResult = await session.run(`
-            MATCH (c:Customer) RETURN 'Customer' AS type, c.id AS id, c.name AS label, c.riskScore AS riskScore, NULL AS isFlagged, NULL AS amount, c.status AS status
-            UNION ALL MATCH (a:Account) RETURN 'Account' AS type, toString(a.accountNumber) AS id, toString(a.accountNumber) AS label, NULL AS riskScore, a.isFlagged AS isFlagged, NULL AS amount, a.status AS status
-            UNION ALL MATCH (t:Transaction) RETURN 'Transaction' AS type, t.transactionId AS id, t.transactionId AS label, NULL AS riskScore, t.isFlagged AS isFlagged, t.amount AS amount, NULL AS status
-            UNION ALL MATCH (d:Device) RETURN 'Device' AS type, d.deviceId AS id, d.deviceId AS label, NULL AS riskScore, NULL AS isFlagged, NULL AS amount, NULL AS status
-            UNION ALL MATCH (i:IPAddress) RETURN 'IPAddress' AS type, i.address AS id, i.address AS label, NULL AS riskScore, i.isVPN AS isFlagged, NULL AS amount, NULL AS status
-            UNION ALL MATCH (l:Location) RETURN 'Location' AS type, l.city + ',' + l.country AS id, l.city + ',' + l.country AS label, NULL AS riskScore, CASE WHEN l.riskLevel = 'high' THEN true ELSE false END AS isFlagged, NULL AS amount, NULL AS status
+            MATCH (c:Customer) RETURN 'Customer' AS type, c.id AS id, c.name AS label, c.riskScore AS riskScore, NULL AS isFlagged, NULL AS amount
+            UNION ALL MATCH (a:Account) RETURN 'Account' AS type, toString(a.accountNumber) AS id, toString(a.accountNumber) AS label, NULL AS riskScore, a.isFlagged AS isFlagged, NULL AS amount
+            UNION ALL MATCH (t:Transaction) RETURN 'Transaction' AS type, t.transactionId AS id, t.transactionId AS label, NULL AS riskScore, t.isFlagged AS isFlagged, t.amount AS amount
+            UNION ALL MATCH (d:Device) RETURN 'Device' AS type, d.deviceId AS id, d.deviceId AS label, NULL AS riskScore, NULL AS isFlagged, NULL AS amount
+            UNION ALL MATCH (i:IPAddress) RETURN 'IPAddress' AS type, i.address AS id, i.address AS label, NULL AS riskScore, i.isVPN AS isFlagged, NULL AS amount
+            UNION ALL MATCH (l:Location) RETURN 'Location' AS type, l.city + ',' + l.country AS id, l.city + ',' + l.country AS label, NULL AS riskScore, CASE WHEN l.riskLevel = 'high' THEN true ELSE false END AS isFlagged, NULL AS amount
         `);
         const nodes = nodesResult.records.map(record => ({
             id: record.get('id'),
@@ -374,8 +383,7 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
             label: record.get('label'),
             riskScore: record.get('riskScore') ? toNativeNumber(record.get('riskScore')) : null,
             isFlagged: record.get('isFlagged') || false,
-            amount: record.get('amount') ? toNativeNumber(record.get('amount')) : null,
-            status: record.get('status')
+            amount: record.get('amount') ? toNativeNumber(record.get('amount')) : null
         }));
 
         const edgesResult = await session.run(`
@@ -399,7 +407,7 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
     }
 });
 
-// REPORT ENDPOINTS 
+// REPORT ENDPOINTS
 
 app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -513,12 +521,12 @@ app.get('/api/reports/risk-distribution', requireAuth, async (req, res) => {
         const result = await session.run(`
             MATCH (c:Customer)
             RETURN 
-                SUM(CASE WHEN c.riskScore >= 30 OR c.status = 'high_risk' THEN 1 ELSE 0 END) AS highCount,
-                SUM(CASE WHEN c.riskScore >= 15 AND c.riskScore < 30 OR c.status = 'medium_risk' THEN 1 ELSE 0 END) AS mediumCount,
-                SUM(CASE WHEN c.riskScore < 15 OR c.riskScore = 0 THEN 1 ELSE 0 END) AS lowCount,
-                AVG(CASE WHEN c.riskScore >= 30 OR c.status = 'high_risk' THEN c.riskScore ELSE NULL END) AS highAvg,
-                AVG(CASE WHEN c.riskScore >= 15 AND c.riskScore < 30 OR c.status = 'medium_risk' THEN c.riskScore ELSE NULL END) AS mediumAvg,
-                AVG(CASE WHEN c.riskScore < 15 OR c.riskScore = 0 THEN c.riskScore ELSE NULL END) AS lowAvg,
+                SUM(CASE WHEN c.riskScore >= 30 THEN 1 ELSE 0 END) AS highCount,
+                SUM(CASE WHEN c.riskScore >= 15 AND c.riskScore < 30 THEN 1 ELSE 0 END) AS mediumCount,
+                SUM(CASE WHEN c.riskScore < 15 THEN 1 ELSE 0 END) AS lowCount,
+                AVG(CASE WHEN c.riskScore >= 30 THEN c.riskScore ELSE NULL END) AS highAvg,
+                AVG(CASE WHEN c.riskScore >= 15 AND c.riskScore < 30 THEN c.riskScore ELSE NULL END) AS mediumAvg,
+                AVG(CASE WHEN c.riskScore < 15 THEN c.riskScore ELSE NULL END) AS lowAvg,
                 COUNT(c) AS totalThreats,
                 AVG(c.riskScore) AS overallAvg
         `);
@@ -684,43 +692,35 @@ app.get('/api/transfers', requireAuth, async (req, res) => {
     }
 });
 
-//  CUSTOMER BANKING ENDPOINTS 
+
+// CUSTOMER BANKING ENDPOINTS 
 
 app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
     const session = driver.session();
     const username = req.session.user.username;
     
+    if (req.session.user.role === 'admin') {
+        return res.json({ isAdmin: true });
+    }
+    
     try {
-        const userCheck = await session.run(`
-            MATCH (u:User {username: $username})
-            RETURN u.role AS role
-        `, { username });
-        
-        if (userCheck.records.length === 0) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-        
-        const role = userCheck.records[0].get('role');
-        
         const customerResult = await session.run(`
-            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)
+            MATCH (c:Customer {username: $username})
             OPTIONAL MATCH (c)-[:OWNS]->(a:Account)
             RETURN c.id AS customerId, 
                    c.name AS name,
                    c.riskScore AS riskScore,
-                   c.status AS status,
                    c.joinDate AS joinDate,
                    COLLECT(DISTINCT {
                        accountNumber: a.accountNumber,
                        type: a.type,
                        balance: a.balance,
-                       status: a.status,
                        isFlagged: a.isFlagged
                    }) AS accounts
         `, { username });
         
         if (customerResult.records.length === 0) {
-            return res.json({ isAdmin: true, role: role });
+            return res.status(404).json({ error: 'Customer not found' });
         }
         
         const record = customerResult.records[0];
@@ -730,13 +730,12 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
                 accountNumber: toNativeNumber(acc.accountNumber),
                 type: acc.type,
                 balance: toNativeNumber(acc.balance),
-                status: acc.status,
                 isFlagged: acc.isFlagged
             }));
         const totalBalance = accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
         
         const transactionsResult = await session.run(`
-            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account)
+            MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account)
             MATCH (a)-[:MADE]->(t:Transaction)
             OPTIONAL MATCH (t)-[:OCCURRED_AT]->(l:Location)
             RETURN t.transactionId AS id,
@@ -763,7 +762,7 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         }));
         
         const incomingResult = await session.run(`
-            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account)
+            MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account)
             MATCH (sender:Account)-[r:TRANSFERRED_TO]->(a)
             OPTIONAL MATCH (sender)<-[:OWNS]-(senderCustomer:Customer)
             RETURN r.amount AS amount,
@@ -784,7 +783,7 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         }));
         
         const outgoingResult = await session.run(`
-            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account)
+            MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account)
             MATCH (a)-[r:TRANSFERRED_TO]->(receiver:Account)
             OPTIONAL MATCH (receiver)<-[:OWNS]-(receiverCustomer:Customer)
             RETURN r.amount AS amount,
@@ -809,7 +808,6 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             customerId: record.get('customerId'),
             name: record.get('name'),
             riskScore: record.get('riskScore') ? toNativeNumber(record.get('riskScore')) : 0,
-            status: record.get('status'),
             joinDate: record.get('joinDate'),
             accounts: accounts,
             totalBalance: totalBalance,
@@ -837,8 +835,8 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
     
     try {
         const authResult = await session.run(`
-            MATCH (u:User {username: $username})-[:IS_CUSTOMER]->(c:Customer)-[:OWNS]->(a:Account {accountNumber: $fromAccount})
-            RETURN a.accountNumber AS accountNumber, a.balance AS balance, a.status AS status
+            MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account {accountNumber: $fromAccount})
+            RETURN a.accountNumber AS accountNumber, a.balance AS balance
         `, { username, fromAccount: fromAccountNumber });
         
         if (authResult.records.length === 0) {
@@ -846,11 +844,6 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
         }
         
         const currentBalance = toNativeNumber(authResult.records[0].get('balance'));
-        const accountStatus = authResult.records[0].get('status');
-        
-        if (accountStatus === 'frozen') {
-            return res.status(400).json({ error: 'Your account is frozen. Please contact support.' });
-        }
         
         if (currentBalance < amount) {
             return res.status(400).json({ error: 'Insufficient funds' });
@@ -858,16 +851,11 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
         
         const targetResult = await session.run(`
             MATCH (target:Account {accountNumber: $toAccount})
-            RETURN target.accountNumber AS accountNumber, target.status AS status
+            RETURN target.accountNumber AS accountNumber
         `, { toAccount: toAccountNumber });
         
         if (targetResult.records.length === 0) {
             return res.status(404).json({ error: 'Recipient account not found' });
-        }
-        
-        const targetStatus = targetResult.records[0].get('status');
-        if (targetStatus === 'frozen') {
-            return res.status(400).json({ error: 'Recipient account is frozen' });
         }
         
         const tx = session.beginTransaction();
@@ -948,7 +936,6 @@ app.get('/api/customer/search-account', requireAuth, async (req, res) => {
             OPTIONAL MATCH (a)<-[:OWNS]-(c:Customer)
             RETURN a.accountNumber AS accountNumber,
                    a.type AS type,
-                   a.status AS status,
                    c.name AS ownerName
             LIMIT 10
         `, { q });
@@ -956,7 +943,6 @@ app.get('/api/customer/search-account', requireAuth, async (req, res) => {
         const accounts = result.records.map(record => ({
             accountNumber: toNativeNumber(record.get('accountNumber')),
             type: record.get('type'),
-            status: record.get('status'),
             ownerName: record.get('ownerName') || 'Unknown'
         }));
         
