@@ -26,8 +26,6 @@ This project is a fraud detection and risk monitoring system that uses a graph d
 
 ---
 
----
-
 ## Installation Guide
 
 ### Step 1: Clone the Repository
