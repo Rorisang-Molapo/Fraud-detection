@@ -712,7 +712,15 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         }
         
         const record = customerResult.records[0];
-        const accounts = record.get('accounts').filter(acc => acc.accountNumber !== null);
+        const accounts = record.get('accounts')
+            .filter(acc => acc.accountNumber !== null)
+            .map(acc => ({
+                accountNumber: acc.accountNumber ? acc.accountNumber.toNumber() : null,
+                type: acc.type,
+                balance: acc.balance ? acc.balance.toNumber() : 0,
+                status: acc.status,
+                isFlagged: acc.isFlagged
+            }));
         const totalBalance = accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
         
         const transactionsResult = await session.run(`
