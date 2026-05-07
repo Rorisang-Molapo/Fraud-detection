@@ -34,6 +34,13 @@ const Customer = () => {
       setLoading(false);
     }
   };
+  // const safeInt = (value) => {
+  //   if (!value) return 0;
+  //   if (typeof value === 'object' && value.low !== undefined) {
+  //     return value.low;
+  //   }
+  //   return value;
+  // };  
 
   const searchCustomers = async () => {
     if (!searchTerm.trim()) {
@@ -110,12 +117,37 @@ const Customer = () => {
     return 'risk-moderate';
   };
 
+  const safeInt = (value) => {
+    if (!value) return 0;
+    if (typeof value === 'object' && value.low !== undefined) {
+      return value.low; // Neo4j integer fix
+    }
+  return value;
+  };
+
   const formatDate = (dateValue) => {
     if (!dateValue) return 'N/A';
     if (typeof dateValue === 'object' && dateValue.year) {
       return dateValue.year + '-' + String(dateValue.month).padStart(2, '0') + '-' + String(dateValue.day).padStart(2, '0');
     }
     return String(dateValue);
+  };
+
+  // FIX: Safe timestamp formatter — guards against null and Neo4j DateTime
+  // objects that weren't serialized server-side, preventing "Invalid Date"
+  // runtime crashes when rendering the transactions table.
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    // If it's already a string (ISO format from server), parse it directly
+    if (typeof timestamp === 'string') {
+      const d = new Date(timestamp);
+      return isNaN(d.getTime()) ? timestamp : d.toLocaleString();
+    }
+    // Fallback: Neo4j DateTime object that slipped through
+    if (typeof timestamp === 'object' && timestamp.year) {
+      return formatDate(timestamp);
+    }
+    return String(timestamp);
   };
 
   if (loading && customers.length === 0) {
@@ -223,19 +255,21 @@ const Customer = () => {
               </thead>
               <tbody>
                 {customers.length > 0 ? (
-                  customers.map((customer) => (
+                  (customers || [])
+                    .filter(c => c && typeof c === 'object')
+                    .map((customer) => (
                     <tr key={customer.id}>
-                      <td>{customer.id}</td>
-                      <td>{customer.name}</td>
-                      <td>{customer.email}</td>
-                      <td>{customer.phone}</td>
+                      <td>{safeInt(customer.id)}</td>
+                      <td>{safeInt(customer.name)}</td>
+                      <td>{safeInt(customer.email)}</td>
+                      <td>{safeInt(customer.phone)}</td>
                       <td>
                         <span className={`risk-badge ${getRiskClass(customer.riskScore)}`}>
                           {customer.riskScore}
                         </span>
                       </td>
                       <td>
-                        <button className="view-button" onClick={() => viewCustomerDetails(customer.id)}>
+                        <button className="view-button" onClick={() => viewCustomerDetails(safeInt(customer.id))}>
                           VIEW DETAILS
                         </button>
                       </td>
@@ -338,7 +372,9 @@ const Customer = () => {
                           <td>{tx.transactionId}</td>
                           <td>${tx.amount?.toLocaleString()}</td>
                           <td>{tx.type}</td>
-                          <td>{new Date(tx.timestamp).toLocaleString()}</td>
+                          {/* FIX: use formatTimestamp instead of new Date(...).toLocaleString()
+                              directly, which crashes when timestamp is null or a non-ISO object */}
+                          <td>{formatTimestamp(tx.timestamp)}</td>
                           <td>
                             <span className={`status-badge ${tx.isFlagged ? 'status-flagged' : 'status-active'}`}>
                               {tx.isFlagged ? 'FLAGGED' : 'NORMAL'}

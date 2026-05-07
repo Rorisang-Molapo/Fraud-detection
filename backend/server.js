@@ -119,16 +119,30 @@ app.post('/api/logout', (req, res) => {
 // DASHBOARD ENDPOINTS
 // ===========================================
 
+// FIX: Rewrote Cypher to avoid Cartesian product caused by chaining MATCH
+// after WITH without proper aggregation. All Customer aggregates are now
+// computed in one pass before joining with Transaction counts.
 app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
         const result = await session.run(`
-            MATCH (c:Customer) WITH COUNT(c) AS totalCustomers
-            MATCH (t:Transaction) WITH totalCustomers, COUNT(t) AS totalTransactions
-            MATCH (t2:Transaction {isFlagged: true}) WITH totalCustomers, totalTransactions, COUNT(t2) AS flaggedTransactions
-            MATCH (c2:Customer) WHERE c2.riskScore >= 15 WITH totalCustomers, totalTransactions, flaggedTransactions, COUNT(c2) AS highRiskCustomers
-            OPTIONAL MATCH (:Account)-[r:TRANSFERRED_TO]->(:Account) WITH totalCustomers, totalTransactions, flaggedTransactions, highRiskCustomers, COALESCE(SUM(r.amount), 0) AS totalTransferAmount
-            MATCH (c3:Customer) RETURN totalCustomers, totalTransactions, flaggedTransactions, highRiskCustomers, totalTransferAmount, COALESCE(AVG(c3.riskScore), 0) AS avgRiskScore
+            MATCH (c:Customer)
+            WITH
+                COUNT(c) AS totalCustomers,
+                AVG(c.riskScore) AS avgRiskScore,
+                SUM(CASE WHEN c.riskScore >= 15 THEN 1 ELSE 0 END) AS highRiskCustomers
+            MATCH (t:Transaction)
+            WITH totalCustomers, avgRiskScore, highRiskCustomers,
+                COUNT(t) AS totalTransactions,
+                SUM(CASE WHEN t.isFlagged = true THEN 1 ELSE 0 END) AS flaggedTransactions
+            OPTIONAL MATCH (:Account)-[r:TRANSFERRED_TO]->(:Account)
+            RETURN
+                totalCustomers,
+                totalTransactions,
+                flaggedTransactions,
+                highRiskCustomers,
+                COALESCE(SUM(r.amount), 0) AS totalTransferAmount,
+                COALESCE(avgRiskScore, 0) AS avgRiskScore
         `);
         const record = result.records[0];
         res.json({
@@ -245,8 +259,11 @@ app.get('/api/customers/search', requireAuth, async (req, res) => {
     }
 });
 
+// FIX: Added .toString() on timestamp fields so Neo4j DateTime objects are
+// serialized to ISO strings before JSON.stringify, preventing "Invalid Date"
+// runtime errors in the frontend.
 app.get('/api/customers/:id', requireAuth, async (req, res) => {
-    const { id } = req.params;
+    const id = parseInt(req.params.id, 10);
     const session = driver.session();
     try {
         const customerResult = await session.run(`
@@ -273,20 +290,21 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
             t.timestamp AS timestamp, t.isFlagged AS isFlagged ORDER BY t.timestamp DESC LIMIT 20
         `, { id });
         const transactions = transactionsResult.records.map(record => ({
-            transactionId: record.get('transactionId'),
+            transactionId: toNativeNumber(record.get('transactionId')),
             amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
-            timestamp: record.get('timestamp'),
-            isFlagged: record.get('isFlagged')
+            // FIX: serialize Neo4j DateTime to string before sending
+            timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
+            isFlagged: !!record.get('isFlagged')
         }));
 
         res.json({
-            id: customer.get('id'),
+            id: toNativeNumber(customer.get('id')),
             name: customer.get('name'),
             email: customer.get('email'),
             phone: customer.get('phone'),
             riskScore: toNativeNumber(customer.get('riskScore')),
-            joinDate: customer.get('joinDate'),
+            joinDate: customer.get('joinDate')?.toString?.() ?? customer.get('joinDate'),
             accounts, transactions
         });
     } catch (error) {
@@ -376,6 +394,9 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
 // NETWORK VISUALIZATION
 // ===========================================
 
+// FIX: Added WHERE clauses to filter out nodes with null city/country so
+// Location node ids are never "null,null", which caused vis-network to throw
+// "Node must have an id".
 app.get('/api/network/data', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -383,18 +404,21 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
             MATCH (c:Customer) RETURN 'Customer' AS type, c.id AS id, c.name AS label, c.riskScore AS riskScore, NULL AS isFlagged, NULL AS amount
             UNION ALL MATCH (a:Account) RETURN 'Account' AS type, toString(a.accountNumber) AS id, toString(a.accountNumber) AS label, NULL AS riskScore, a.isFlagged AS isFlagged, NULL AS amount
             UNION ALL MATCH (t:Transaction) RETURN 'Transaction' AS type, t.transactionId AS id, t.transactionId AS label, NULL AS riskScore, t.isFlagged AS isFlagged, t.amount AS amount
-            UNION ALL MATCH (d:Device) RETURN 'Device' AS type, d.deviceId AS id, d.deviceId AS label, NULL AS riskScore, NULL AS isFlagged, NULL AS amount
-            UNION ALL MATCH (i:IPAddress) RETURN 'IPAddress' AS type, i.address AS id, i.address AS label, NULL AS riskScore, i.isVPN AS isFlagged, NULL AS amount
-            UNION ALL MATCH (l:Location) RETURN 'Location' AS type, l.city + ',' + l.country AS id, l.city + ',' + l.country AS label, NULL AS riskScore, CASE WHEN l.riskLevel = 'high' THEN true ELSE false END AS isFlagged, NULL AS amount
+            UNION ALL MATCH (d:Device) WHERE d.deviceId IS NOT NULL RETURN 'Device' AS type, d.deviceId AS id, d.deviceId AS label, NULL AS riskScore, NULL AS isFlagged, NULL AS amount
+            UNION ALL MATCH (i:IPAddress) WHERE i.address IS NOT NULL RETURN 'IPAddress' AS type, i.address AS id, i.address AS label, NULL AS riskScore, i.isVPN AS isFlagged, NULL AS amount
+            UNION ALL MATCH (l:Location) WHERE l.city IS NOT NULL AND l.country IS NOT NULL RETURN 'Location' AS type, l.city + ',' + l.country AS id, l.city + ',' + l.country AS label, NULL AS riskScore, CASE WHEN l.riskLevel = 'high' THEN true ELSE false END AS isFlagged, NULL AS amount
         `);
-        const nodes = nodesResult.records.map(record => ({
-            id: record.get('id'),
-            type: record.get('type'),
-            label: record.get('label'),
-            riskScore: record.get('riskScore') ? toNativeNumber(record.get('riskScore')) : null,
-            isFlagged: record.get('isFlagged') || false,
-            amount: record.get('amount') ? toNativeNumber(record.get('amount')) : null
-        }));
+        const nodes = nodesResult.records
+            .map(record => ({
+                id: record.get('id'),
+                type: record.get('type'),
+                label: record.get('label'),
+                riskScore: record.get('riskScore') ? toNativeNumber(record.get('riskScore')) : null,
+                isFlagged: record.get('isFlagged') || false,
+                amount: record.get('amount') ? toNativeNumber(record.get('amount')) : null
+            }))
+            // Extra safety: drop any node that still has a null/empty id
+            .filter(n => n.id != null && n.id !== '' && n.id !== 'null,null');
 
         const edgesResult = await session.run(`
             MATCH (source)-[r]->(target) WHERE (source:Customer OR source:Account OR source:Transaction OR source:Device OR source:IPAddress OR source:Location) AND (target:Customer OR target:Account OR target:Transaction OR target:Device OR target:IPAddress OR target:Location)
@@ -402,12 +426,16 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
             CASE WHEN target:Customer THEN target.id WHEN target:Account THEN toString(target.accountNumber) WHEN target:Transaction THEN target.transactionId WHEN target:Device THEN target.deviceId WHEN target:IPAddress THEN target.address WHEN target:Location THEN target.city + ',' + target.country END AS target,
             type(r) AS relationship, r.amount AS amount
         `);
-        const edges = edgesResult.records.map(record => ({
-            source: record.get('source'),
-            target: record.get('target'),
-            relationship: record.get('relationship'),
-            amount: record.get('amount') ? toNativeNumber(record.get('amount')) : null
-        }));
+        const edges = edgesResult.records
+            .map(record => ({
+                source: record.get('source'),
+                target: record.get('target'),
+                relationship: record.get('relationship'),
+                amount: record.get('amount') ? toNativeNumber(record.get('amount')) : null
+            }))
+            // Drop edges whose endpoints are null (orphaned from filtered-out nodes)
+            .filter(e => e.source != null && e.target != null && e.source !== '' && e.target !== '');
+
         res.json({ nodes, edges });
     } catch (error) {
         console.error('Network data error:', error);
@@ -421,6 +449,7 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
 // REPORT ENDPOINTS
 // ===========================================
 
+// FIX: Added .toString() on timestamp so Neo4j DateTime is serialized correctly.
 app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -444,7 +473,8 @@ app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
             id: record.get('id'),
             amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
-            timestamp: record.get('timestamp'),
+            // FIX: serialize Neo4j DateTime to string
+            timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             reason: record.get('reason') || 'Manual review required',
             accountNumber: record.get('accountNumber') ? toNativeNumber(record.get('accountNumber')) : 'N/A',
             location: record.get('location') || 'Unknown',
@@ -461,6 +491,7 @@ app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
     }
 });
 
+// FIX: Added .toString() on timestamp.
 app.get('/api/transactions/all', requireAuth, async (req, res) => {
     const session = driver.session();
     try {
@@ -482,7 +513,8 @@ app.get('/api/transactions/all', requireAuth, async (req, res) => {
             id: record.get('id'),
             amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
-            timestamp: record.get('timestamp'),
+            // FIX: serialize Neo4j DateTime to string
+            timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             isFlagged: record.get('isFlagged'),
             accountNumber: toNativeNumber(record.get('accountNumber')),
             location: record.get('location') || 'Unknown'
@@ -767,7 +799,7 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             id: record.get('id'),
             amount: toNativeNumber(record.get('amount')),
             type: record.get('type'),
-            timestamp: record.get('timestamp'),
+            timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             isFlagged: record.get('isFlagged'),
             merchant: record.get('merchant'),
             flagReason: record.get('flagReason'),
@@ -789,7 +821,7 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         
         const incomingTransfers = incomingResult.records.map(record => ({
             amount: record.get('amount') ? toNativeNumber(record.get('amount')) : 0,
-            timestamp: record.get('timestamp'),
+            timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             reference: record.get('reference'),
             fromAccount: record.get('fromAccount') ? toNativeNumber(record.get('fromAccount')) : null,
             fromName: record.get('fromName')
@@ -810,7 +842,7 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
         
         const outgoingTransfers = outgoingResult.records.map(record => ({
             amount: record.get('amount') ? toNativeNumber(record.get('amount')) : 0,
-            timestamp: record.get('timestamp'),
+            timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
             reference: record.get('reference'),
             toAccount: record.get('toAccount') ? toNativeNumber(record.get('toAccount')) : null,
             toName: record.get('toName')
@@ -837,7 +869,6 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
     }
 });
 
-// FIXED TRANSFER ENDPOINT - This is the important fix
 app.post('/api/customer/transfer', requireAuth, async (req, res) => {
     const session = driver.session();
     const username = req.session.user.username;

@@ -36,8 +36,20 @@ const Network = () => {
       });
       
       if (response.data && response.data.nodes && response.data.edges) {
-        // Limit the data for better performance
-        const limitedData = limitGraphData(response.data, maxTransactions, maxTransferEdges);
+        let limitedData = limitGraphData(response.data, maxTransactions, maxTransferEdges);
+
+        // FIX: Drop any node with a null/empty/malformed id before handing to vis-network.
+        // Location nodes whose city or country is null in Neo4j produce ids like
+        // "null,null" which causes vis-network to throw "Node must have an id".
+        limitedData.nodes = limitedData.nodes.filter(
+          n => n.id != null && n.id !== '' && n.id !== 'null,null' && !String(n.id).startsWith('null,') && !String(n.id).endsWith(',null')
+        );
+        // Drop edges whose source or target no longer exists after node filtering
+        const validIds = new Set(limitedData.nodes.map(n => n.id));
+        limitedData.edges = limitedData.edges.filter(
+          e => e.source != null && e.target != null && validIds.has(e.source) && validIds.has(e.target)
+        );
+
         setGraphData(limitedData);
       } else {
         setGraphData({ nodes: [], edges: [] });
@@ -55,7 +67,7 @@ const Network = () => {
     }
   };
 
-  // NEW: Limit graph data for performance
+  // Limit graph data for performance
   const limitGraphData = (data, maxTrans, maxTransfers) => {
     if (!data || !data.nodes || !data.edges) return data;
     
@@ -72,7 +84,6 @@ const Network = () => {
     
     // Filter edges to only those connected to included transactions
     let filteredEdges = data.edges.filter(e => {
-      // Keep edges that connect to included transactions
       if (transactionIds.has(e.source) || transactionIds.has(e.target)) {
         return true;
       }
@@ -92,11 +103,12 @@ const Network = () => {
     // Get all node IDs that are still connected
     const connectedNodeIds = new Set();
     finalEdges.forEach(e => {
-      connectedNodeIds.add(e.source);
-      connectedNodeIds.add(e.target);
+      // FIX: guard against null source/target before adding to set
+      if (e.source != null) connectedNodeIds.add(e.source);
+      if (e.target != null) connectedNodeIds.add(e.target);
     });
     
-    // Also include all customers and accounts (they're important for context)
+    // Also include all customers and accounts (important for context)
     customers.forEach(c => connectedNodeIds.add(c.id));
     accounts.forEach(a => connectedNodeIds.add(a.id));
     
@@ -106,7 +118,7 @@ const Network = () => {
     return { nodes: finalNodes, edges: finalEdges };
   };
 
-  // NEW: Aggregate multiple transfers between same accounts
+  // Aggregate multiple transfers between same accounts
   const aggregateTransferEdges = (edges) => {
     const transferMap = new Map();
     const otherEdges = [];
@@ -217,87 +229,98 @@ const Network = () => {
       );
     }
 
-    const visNodes = nodesToShow.map(node => {
-      const colors = getNodeColor(node.type, node.isFlagged, node.riskScore);
-      return {
-        id: node.id,
-        label: node.label.length > 25 ? node.label.substring(0, 22) + '...' : node.label,
-        title: `${node.type}\n${node.label}\n${node.riskScore ? 'Risk Score: ' + node.riskScore : ''}${node.amount ? 'Amount: $' + node.amount.toLocaleString() : ''}${node.isFlagged ? '\nFLAGGED' : ''}`,
-        color: {
-          background: colors.background,
-          border: colors.border,
-          highlight: {
+    // FIX: Filter out any nodes that still have a null/empty id before passing
+    // to vis-network — vis throws "Node must have an id" otherwise.
+    const visNodes = nodesToShow
+      .filter(node => node.id != null && node.id !== '')
+      .map(node => {
+        const colors = getNodeColor(node.type, node.isFlagged, node.riskScore);
+        const safeLabel = node.label && node.label.length > 25
+          ? node.label.substring(0, 22) + '...'
+          : (node.label || String(node.id));
+        return {
+          id: node.id,
+          label: safeLabel,
+          title: `${node.type}\n${node.label}\n${node.riskScore ? 'Risk Score: ' + node.riskScore : ''}${node.amount ? 'Amount: $' + node.amount.toLocaleString() : ''}${node.isFlagged ? '\nFLAGGED' : ''}`,
+          color: {
             background: colors.background,
-            border: '#ffffff'
-          }
-        },
-        font: {
-          color: '#ffffff',
-          size: getFontSize(node.type),
-          face: 'Courier New'
-        },
-        size: getNodeSize(node.type, node.amount, node.riskScore),
-        shape: node.type === 'Customer' ? 'dot' : 'box',
-        borderWidth: node.isFlagged ? 3 : 1
-      };
-    });
+            border: colors.border,
+            highlight: {
+              background: colors.background,
+              border: '#ffffff'
+            }
+          },
+          font: {
+            color: '#ffffff',
+            size: getFontSize(node.type),
+            face: 'Courier New'
+          },
+          size: getNodeSize(node.type, node.amount, node.riskScore),
+          shape: node.type === 'Customer' ? 'dot' : 'box',
+          borderWidth: node.isFlagged ? 3 : 1
+        };
+      });
 
-    // Create unique IDs for all edges
-    const visEdges = edgesToShow.map((edge, idx) => {
-      let color = '#64748b';
-      let width = edge.width || 1;
-      let dashes = false;
-      
-      if (edge.relationship === 'TRANSFERRED_TO') {
-        color = '#f59e0b';
-        width = Math.min(5, edge.width || (edge.amount > 20000 ? 4 : edge.amount > 10000 ? 3 : 2));
-      }
-      if (edge.relationship === 'MADE') {
-        color = '#a78bfa';
-      }
-      if (edge.relationship === 'OWNS') {
-        color = '#60a5fa';
-      }
-      if (edge.relationship === 'USED' || edge.relationship === 'USES_DEVICE') {
-        color = '#f97316';
-      }
-      if (edge.relationship === 'FROM_IP') {
-        color = '#06b6d4';
-      }
-      if (edge.relationship === 'OCCURRED_AT') {
-        color = '#ec489a';
-      }
+    // Build set of valid node ids so we can drop orphan edges
+    const visNodeIds = new Set(visNodes.map(n => n.id));
 
-      // Simple unique ID using index (sufficient since we deduplicated)
-      const uniqueId = `edge_${idx}_${Date.now()}`;
-      
-      return {
-        id: uniqueId,
-        from: edge.source,
-        to: edge.target,
-        label: edge.label || (edge.relationship === 'TRANSFERRED_TO' && edge.amount ? `$${edge.amount.toLocaleString()}` : ''),
-        title: edge.title || `${edge.relationship}${edge.amount ? '\nAmount: $' + edge.amount.toLocaleString() : ''}${edge.count ? `\n${edge.count} total transfers` : ''}`,
-        color: color,
-        width: width,
-        dashes: dashes,
-        font: {
-          size: 9,
-          color: '#94a3b8',
-          face: 'Courier New',
-          align: 'middle'
-        },
-        smooth: {
-          type: 'curvedCW',
-          roundness: 0.2
-        },
-        arrows: {
-          to: {
-            enabled: true,
-            scaleFactor: 0.8
-          }
+    // Create unique IDs for all edges; also drop edges referencing removed nodes
+    const visEdges = edgesToShow
+      .filter(edge => visNodeIds.has(edge.source) && visNodeIds.has(edge.target))
+      .map((edge, idx) => {
+        let color = '#64748b';
+        let width = edge.width || 1;
+        let dashes = false;
+        
+        if (edge.relationship === 'TRANSFERRED_TO') {
+          color = '#f59e0b';
+          width = Math.min(5, edge.width || (edge.amount > 20000 ? 4 : edge.amount > 10000 ? 3 : 2));
         }
-      };
-    });
+        if (edge.relationship === 'MADE') {
+          color = '#a78bfa';
+        }
+        if (edge.relationship === 'OWNS') {
+          color = '#60a5fa';
+        }
+        if (edge.relationship === 'USED' || edge.relationship === 'USES_DEVICE') {
+          color = '#f97316';
+        }
+        if (edge.relationship === 'FROM_IP') {
+          color = '#06b6d4';
+        }
+        if (edge.relationship === 'OCCURRED_AT') {
+          color = '#ec489a';
+        }
+
+        const uniqueId = `edge_${idx}_${Date.now()}`;
+        
+        return {
+          id: uniqueId,
+          from: edge.source,
+          to: edge.target,
+          label: edge.label || (edge.relationship === 'TRANSFERRED_TO' && edge.amount ? `$${edge.amount.toLocaleString()}` : ''),
+          title: edge.title || `${edge.relationship}${edge.amount ? '\nAmount: $' + edge.amount.toLocaleString() : ''}${edge.count ? `\n${edge.count} total transfers` : ''}`,
+          color: color,
+          width: width,
+          dashes: dashes,
+          font: {
+            size: 9,
+            color: '#94a3b8',
+            face: 'Courier New',
+            align: 'middle'
+          },
+          smooth: {
+            type: 'curvedCW',
+            roundness: 0.2
+          },
+          arrows: {
+            to: {
+              enabled: true,
+              scaleFactor: 0.8
+            }
+          }
+        };
+      });
 
     const options = {
       nodes: {
