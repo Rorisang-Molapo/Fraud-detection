@@ -2257,6 +2257,64 @@
     margin-bottom: 15px;
 }
 
+/* Layout */
+.customer-main {
+    display: flex;
+}
+
+/* Sidebar */
+.sidebar {
+    position: fixed;
+    top: 70px;              /* height of header */
+    left: 0;
+    width: 250px;
+    height: calc(100vh - 70px);
+    background: #111;
+    padding: 20px;
+    transition: 0.3s;
+    z-index: 1000;
+}
+
+.sidebar.closed {
+    transform: translateX(-100%);
+}
+
+/* Content area */
+.content {
+    width: 100%;
+    padding: 30px;
+    transition: 0.3s;
+}
+
+/* When sidebar visible → push content */
+.content.shifted {
+    margin-left: 250px;
+}
+
+/* When sidebar hidden → full width */
+.content.full {
+    margin-left: 0;
+}
+
+/* Header */
+.customer-header {
+    height: 70px;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    background: #0b0b0b;
+    color: white;
+}
+
+/* Hamburger */
+.menu-toggle {
+    font-size: 24px;
+    margin-right: 20px;
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+}
 @keyframes spin {
     to { transform: rotate(360deg); }
 }

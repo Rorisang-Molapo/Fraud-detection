@@ -8,6 +8,7 @@ const CustomerDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
+    const [sidebarOpen, setSidebarOpen] = useState(true);
     const [transferForm, setTransferForm] = useState({
         fromAccount: '',
         toAccount: '',
@@ -147,6 +148,12 @@ const CustomerDashboard = () => {
         <div className="customer-app">
             {/* Header */}
             <div className="customer-header">
+                <button 
+                    className="menu-toggle"
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                >
+                    ☰
+                </button>                
                 <div className="logo">
                     <h1>FEDERAL 20!</h1>
                     <span>Online Banking</span>
@@ -160,7 +167,7 @@ const CustomerDashboard = () => {
             {/* Main */}
             <div className="customer-main">
                 {/* Sidebar */}
-                <div className="sidebar">
+                <div className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
                     <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
                          Overview
                     </button>
@@ -176,7 +183,7 @@ const CustomerDashboard = () => {
                 </div>
 
                 {/* Content */}
-                <div className="content">
+                <div className={`content ${sidebarOpen ? 'shifted' : 'full'}`}>
                     {/* Overview Tab */}
                     {activeTab === 'overview' && (
                         <div>
