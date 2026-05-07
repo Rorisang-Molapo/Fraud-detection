@@ -318,7 +318,7 @@ const CustomerDashboard = () => {
                             </form>
                             
                             <div className="warning-note">
-                                Transfers over $10,000 will be flagged for security review.
+                                Transfers over M10,000 will be flagged for security review.
                             </div>
                         </div>
                     )}
