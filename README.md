@@ -25,6 +25,8 @@ This project is a fraud detection and risk monitoring system that uses a graph d
 | axios | API calls |
 
 ---
+## CodeQL Status
+[![CodeQL Advanced](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml/badge.svg)](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml)
 
 ## Installation Guide
 
@@ -61,10 +63,4 @@ NEO4J_PASSWORD=yourpassword
 ## start your application.
 ---
 
-
-## CodeQL Status
-[![CodeQL Advanced](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml/badge.svg)](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml)
-
-<br/>
----
 ## FEDERAL 20! TO THE WORLD © 2026
