@@ -206,7 +206,7 @@ const CustomerDashboard = () => {
                                         <div className="card-info">
                                             <div className="card-type">{acc.type?.toUpperCase()} Account</div>
                                             <div className="card-number">{formatAccountNumber(acc.accountNumber)}</div>
-                                            <div className="card-balance">${acc.balance?.toLocaleString()}</div>
+                                            <div className="card-balance">M{acc.balance?.toLocaleString()}</div>
                                             {acc.isFlagged && <span className="flagged-tag">FLAGGED</span>}
                                         </div>
                                     </div>
@@ -216,7 +216,7 @@ const CustomerDashboard = () => {
                             {/* Total Balance */}
                             <div className="total-balance">
                                 <h3>Total Balance</h3>
-                                <div className="total-amount">${data.totalBalance?.toLocaleString()}</div>
+                                <div className="total-amount">M{data.totalBalance?.toLocaleString()}</div>
                             </div>
 
                             {/* Recent Activity */}
