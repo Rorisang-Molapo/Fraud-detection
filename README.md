@@ -1,5 +1,7 @@
 # Fraud Detection System
 
+[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&duration=5075&pause=1031&color=DA0000&width=435&lines=Fraud+Detection+System;using+Neo4j)](https://git.io/typing-svg)
+
 > A simple fraud detection system built using React and Neo4j graph database
 
 **Developers:** Isaac xv¡ & just_ranks xv¡ & Matlali xv¡ & BlackBeard1-0-1 xv¡ & Tshetshe xv¡ & Zulu xv¡ <br/>
@@ -64,26 +66,31 @@ NEO4J_PASSWORD=yourpassword
 ```
 
 ## References
+1. A. A. Rahman et al., "A systematic review of fraud: an overview of state-owned enterprises," Cogent Business &amp; Management, vol. 12, no. 1, p. 2518493, 2025.
 
-1. S. S. A. N. Al-Masri and M. S. H. H. Al-Ahmad, "Fraud Detection in Financial Transactions Using Graph Databases," *Journal of Information Security and Applications*, vol. 68, 2022.
+2. O. C. Odeyemi et al., "Flagged for Fraud: Lessons From 3 Case Studies on Detecting Fraudulent Research Participants," J Med Internet Res, vol. 26, p. e12552812, 2025.
 
-2. R. K. L. Tan and V. C. S. Lee, "Graph-Based Anomaly Detection for Anti-Money Laundering," *IEEE Transactions on Knowledge and Data Engineering*, vol. 34, no. 5, pp. 2100-2114, 2022.
+3. A. O. Bello et al., "Preventive Fraud Risk Management and Fraud Incidence: Evidence from Commercial Banks," Int. J. Res. Innov. Soc. Sci., Dec. 2025.
 
-3. M. J. Smith, "Real-Time Fraud Detection Using Neo4j," *International Journal of Database Management Systems*, vol. 14, no. 2, pp. 45-62, 2023.
+4. S. S. Dhoke et al., "Enhancing fraud detection in banking by integration of graph database with machine learning," Heliyon, vol. 10, no. 7, p. e28472, Apr. 2024.
 
-4. K. Patel and S. Kumar, "Graph Neural Networks for Financial Fraud Detection," *IEEE Access*, vol. 11, pp. 45230-45245, 2023.
+5. Y. Zhang et al., "Graph neural networks for financial fraud detection: a review," Front. Comput. Sci., vol. 19, 2025, doi: 10.1007/s11704-024-40474-y.
 
-5. L. Chen, Y. Wang, and H. Zhang, "Impossible Travel Detection in Banking Systems," *Computers & Security*, vol. 118, 2022.
+6. N. O. Okafor et al., "Graph Databases in Life and Annuities Insurance: Enhancing Fraud Detection and Risk Modeling," Int. J. Innov. Res. Manage., Apr. 2025.
 
-6. T. Williams and J. Brown, "Money Laundering Detection Using Graph Traversal," *Journal of Financial Crime*, vol. 29, no. 4, pp. 1120-1138, 2022.
+7. A. Folorunso et al., "Machine learning approaches for enhancing fraud prevention in financial transactions," Eur. J. Comput. Sci. Inf. Technol., vol. 11, no. 6, pp. 85-108, 2023.
 
-7. A. Garcia, R. Martinez, and C. Lopez, "Risk Scoring Models for Graph Databases," *Expert Systems with Applications*, vol. 200, 2022.
+8. O. A. Bello et al., "Analysing the impact of advanced analytics on fraud detection: a machine learning perspective," Eur. J. Comput. Sci. Inf. Technol., vol. 11, no. 6, pp. 103-126, 2023.
 
-8. N. Okonkwo and E. Adebayo, "Real-Time Fraud Alert Systems for Financial Institutions," *Information Systems Frontiers*, vol. 25, pp. 789-805, 2023.
+9. O. Ejiofor et al., "A comprehensive framework for strengthening USA financial cybersecurity: integrating machine learning and AI in fraud detection systems," Eur. J. Comput. Sci. Inf. Technol., vol. 11, no. 6, pp. 62-83, 2023.
 
-9. D. Johnson and M. Lee, "Network Visualization for Fraud Investigation," *IEEE Transactions on Visualization and Computer Graphics*, vol. 28, no. 6, pp. 2340-2353, 2022.
+10. A. O. Bello et al., "AI-driven approaches for real-time fraud detection in US financial transactions: Challenges and opportunities," Eur. J. Comput. Sci. Inf. Technol., vol. 11, no. 6, pp. 84-102, 2023.
 
-10. H. Kim, S. Park, and J. Choi, "Session-Based Authentication in Financial Systems," *Computers & Security*, vol. 125, 2023.
+11. S. K. Odeyemi et al., "A systematic review and future directions for AI-driven detection of financial fraud in SACCOs," PMC, Jan. 2026.
+
+12. M. A. Khan et al., "ENHANCING FINANCIAL FRAUD DETECTION BY LEVERAGING NEO4J AND LLAMA2," SSRN, Dec. 2025.
+
+13. J. Doe et al., "Fraud risk management and organizational resilience," WJARR, 2025.
 ## start your application.
 
 ##  FEDERAL 20! TO THE WORLD © 2026
