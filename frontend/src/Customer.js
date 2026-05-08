@@ -34,13 +34,6 @@ const Customer = () => {
       setLoading(false);
     }
   };
-  // const safeInt = (value) => {
-  //   if (!value) return 0;
-  //   if (typeof value === 'object' && value.low !== undefined) {
-  //     return value.low;
-  //   }
-  //   return value;
-  // };  
 
   const searchCustomers = async () => {
     if (!searchTerm.trim()) {
@@ -120,7 +113,7 @@ const Customer = () => {
   const safeInt = (value) => {
     if (!value) return 0;
     if (typeof value === 'object' && value.low !== undefined) {
-      return value.low; // Neo4j integer fix
+      return value.low; 
     }
   return value;
   };
@@ -133,17 +126,14 @@ const Customer = () => {
     return String(dateValue);
   };
 
-  // FIX: Safe timestamp formatter — guards against null and Neo4j DateTime
-  // objects that weren't serialized server-side, preventing "Invalid Date"
-  // runtime crashes when rendering the transactions table.
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return 'N/A';
-    // If it's already a string (ISO format from server), parse it directly
+    
     if (typeof timestamp === 'string') {
       const d = new Date(timestamp);
       return isNaN(d.getTime()) ? timestamp : d.toLocaleString();
     }
-    // Fallback: Neo4j DateTime object that slipped through
+  
     if (typeof timestamp === 'object' && timestamp.year) {
       return formatDate(timestamp);
     }
