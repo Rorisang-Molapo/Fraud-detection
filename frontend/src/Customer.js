@@ -362,8 +362,7 @@ const Customer = () => {
                           <td>{tx.transactionId}</td>
                           <td>${tx.amount?.toLocaleString()}</td>
                           <td>{tx.type}</td>
-                          {/* FIX: use formatTimestamp instead of new Date(...).toLocaleString()
-                              directly, which crashes when timestamp is null or a non-ISO object */}
+                          
                           <td>{formatTimestamp(tx.timestamp)}</td>
                           <td>
                             <span className={`status-badge ${tx.isFlagged ? 'status-flagged' : 'status-active'}`}>
