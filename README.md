@@ -15,6 +15,11 @@ This project is a fraud detection and risk monitoring system that uses a graph d
 
 ---
 
+### System Preview
+
+
+
+https://github.com/user-attachments/assets/14524d66-6412-4e8b-b2fc-57fa86a32894
 
 
 
