@@ -734,14 +734,17 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             }));
         const totalBalance = accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
         
+        // Get outgoing transactions
         const transactionsResult = await session.run(`
             MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account)
             MATCH (a)-[:MADE]->(t:Transaction)
             OPTIONAL MATCH (t)-[:OCCURRED_AT]->(l:Location)
             RETURN t.transactionId AS id, t.amount AS amount, t.type AS type, t.timestamp AS timestamp,
-                   t.isFlagged AS isFlagged, t.merchant AS merchant, t.flagReason AS flagReason, l.city AS location
+                   t.isFlagged AS isFlagged, t.merchant AS merchant, t.flagReason AS flagReason, l.city AS location,
+                   'outgoing' AS direction
             ORDER BY t.timestamp DESC LIMIT 20
         `, { username });
+        
         const transactions = transactionsResult.records.map(record => ({
             id: toNativeNumber(record.get('id')),
             amount: toNativeNumber(record.get('amount')),
@@ -750,24 +753,43 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             isFlagged: record.get('isFlagged'),
             merchant: record.get('merchant'),
             flagReason: record.get('flagReason'),
-            location: record.get('location')
+            location: record.get('location'),
+            direction: 'outgoing'
         }));
         
+        // Get incoming transfers
         const incomingResult = await session.run(`
             MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account)
             MATCH (sender:Account)-[r:TRANSFERRED_TO]->(a)
             OPTIONAL MATCH (sender)<-[:OWNS]-(senderCustomer:Customer)
             RETURN r.amount AS amount, r.timestamp AS timestamp, r.reference AS reference,
-                   sender.accountNumber AS fromAccount, senderCustomer.name AS fromName
-            ORDER BY r.timestamp DESC LIMIT 10
+                   sender.accountNumber AS fromAccount, senderCustomer.name AS fromName,
+                   'incoming' AS direction
+            ORDER BY r.timestamp DESC LIMIT 20
         `, { username });
+        
         const incomingTransfers = incomingResult.records.map(record => ({
+            id: 'INC_' + Date.now() + '_' + Math.random(),
             amount: toNativeNumber(record.get('amount')),
+            type: 'transfer_received',
             timestamp: record.get('timestamp') ? record.get('timestamp').toString() : null,
-            reference: record.get('reference'),
+            isFlagged: false,
+            merchant: null,
             fromAccount: toNativeNumber(record.get('fromAccount')),
-            fromName: record.get('fromName')
+            fromName: record.get('fromName'),
+            direction: 'incoming',
+            reference: record.get('reference')
         }));
+        
+        // Combine both arrays
+        const allTransactions = [...transactions, ...incomingTransfers];
+        
+        // Sort by timestamp (newest first)
+        allTransactions.sort((a, b) => {
+            if (!a.timestamp) return 1;
+            if (!b.timestamp) return -1;
+            return new Date(b.timestamp) - new Date(a.timestamp);
+        });
         
         const outgoingResult = await session.run(`
             MATCH (c:Customer {username: $username})-[:OWNS]->(a:Account)
@@ -793,7 +815,7 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             joinDate: record.get('joinDate')?.toString() ?? null,
             accounts: accounts,
             totalBalance: totalBalance,
-            recentTransactions: transactions,
+            recentTransactions: allTransactions.slice(0, 20),
             incomingTransfers: incomingTransfers,
             outgoingTransfers: outgoingTransfers
         });
