@@ -238,17 +238,34 @@ const CustomerDashboard = () => {
                             <div className="recent-activity">
                                 <h3>Recent Activity</h3>
                                 {data.recentTransactions && data.recentTransactions.length > 0 ? (
-                                    data.recentTransactions.slice(0, 5).map((tx, idx) => (
+                                    data.recentTransactions.slice(0, 10).map((tx, idx) => (
                                         <div key={idx} className="activity-item">
                                             <div className="activity-details">
                                                 <div className="activity-title">
-                                                    {tx.type === 'transfer' ? 'Money Transfer' : 'Purchase'}
+                                                    {tx.direction === 'incoming' ? (
+                                                        <>Money Received</>
+                                                    ) : (
+                                                        <>{tx.type === 'transfer' ? 'Money Sent' : 'Purchase'}</>
+                                                    )}
                                                     {tx.isFlagged && <span className="flagged-badge-small">Flagged</span>}
                                                 </div>
                                                 <div className="activity-date">{formatDate(tx.timestamp)}</div>
-                                                {tx.merchant && <div className="activity-merchant">{tx.merchant}</div>}
+                                                {tx.direction === 'incoming' && tx.fromName && (
+                                                    <div className="activity-merchant">From: {tx.fromName}</div>
+                                                )}
+                                                {tx.direction === 'incoming' && tx.fromAccount && !tx.fromName && (
+                                                    <div className="activity-merchant">From Account: {formatAccountNumber(tx.fromAccount)}</div>
+                                                )}
+                                                {tx.direction === 'outgoing' && tx.merchant && (
+                                                    <div className="activity-merchant">{tx.merchant}</div>
+                                                )}
+                                                {tx.reference && (
+                                                    <div className="activity-merchant">Ref: {tx.reference}</div>
+                                                )}
                                             </div>
-                                            <div className="activity-amount">-${tx.amount?.toLocaleString()}</div>
+                                            <div className={`activity-amount ${tx.direction === 'incoming' ? 'amount-positive' : 'amount-negative'}`}>
+                                                {tx.direction === 'incoming' ? '+' : '-'}${tx.amount?.toLocaleString()}
+                                            </div>
                                         </div>
                                     ))
                                 ) : (
@@ -349,13 +366,18 @@ const CustomerDashboard = () => {
                                             <div>
                                                 <div className="transaction-id">{tx.id}</div>
                                                 <div className="transaction-type">
-                                                    {tx.type?.toUpperCase()}
+                                                    {tx.direction === 'incoming' ? 'RECEIVED' : tx.type?.toUpperCase()}
                                                     {tx.isFlagged && <span className="flagged-badge-small">Flagged</span>}
                                                 </div>
                                                 <div className="transaction-date">{formatDate(tx.timestamp)}</div>
+                                                {tx.direction === 'incoming' && tx.fromName && (
+                                                    <div className="transaction-location">From: {tx.fromName}</div>
+                                                )}
                                                 {tx.location && <div className="transaction-location">Location: {tx.location}</div>}
                                             </div>
-                                            <div className="transaction-amount">${tx.amount?.toLocaleString()}</div>
+                                            <div className={`transaction-amount ${tx.direction === 'incoming' ? 'amount-positive' : 'amount-negative'}`}>
+                                                {tx.direction === 'incoming' ? '+' : '-'}${tx.amount?.toLocaleString()}
+                                            </div>
                                         </div>
                                     ))
                                 ) : (
