@@ -77,7 +77,7 @@ app.post('/api/login', async (req, res) => {
                 loggedIn: true
             };
             
-            // Record device usage on login (matching your schema)
+            // Record device usage on login 
             if (deviceId) {
                 await neo4jSession.run(`
                     MATCH (c:Customer {username: $username})
@@ -806,10 +806,10 @@ app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
             reference: record.get('reference')
         }));
         
-        // Combine both arrays
+        
         const allTransactions = [...transactions, ...incomingTransfers];
         
-        // Sort by timestamp (newest first)
+        // Sort by timestamp
         allTransactions.sort((a, b) => {
             if (!a.timestamp) return 1;
             if (!b.timestamp) return -1;
@@ -975,7 +975,7 @@ app.get('/api/customer/search-account', requireAuth, async (req, res) => {
 });
 
 
-// DEVICE TRACKING ENDPOINTS (UPDATED TO MATCH YOUR SCHEMA)
+// DEVICE TRACKING ENDPOINTS 
 
 app.post('/api/device/register', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -1014,7 +1014,7 @@ app.post('/api/device/register', requireAuth, async (req, res) => {
             platform: deviceInfo.platform || 'Unknown'
         });
         
-        // Create USES_DEVICE relationship (matching your original schema)
+        // Create USES_DEVICE relationship 
         await session.run(`
             MATCH (c:Customer {id: $customerId})
             MATCH (d:Device {deviceId: $deviceId})
