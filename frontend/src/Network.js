@@ -44,7 +44,6 @@ const Network = () => {
       if (response.data && response.data.nodes && response.data.edges) {
         let limitedData = limitGraphData(response.data, maxTransactions, maxTransferEdges);
         
-        // Ensure every node has a string id AND deduplicate by id
         limitedData.nodes = limitedData.nodes
           .filter(n => n.id != null && n.id !== '')
           .map(node => ({
@@ -52,7 +51,6 @@ const Network = () => {
             id: String(cleanId(node.id))
           }));
         
-        // CRITICAL FIX: Remove duplicate node IDs (vis-network fails if duplicate ids exist)
         const uniqueNodesMap = new Map();
         limitedData.nodes.forEach(node => {
           if (!uniqueNodesMap.has(node.id)) {
@@ -92,6 +90,7 @@ const Network = () => {
     
     const customers = data.nodes.filter(n => n.type === 'Customer');
     const accounts = data.nodes.filter(n => n.type === 'Account');
+    const devices = data.nodes.filter(n => n.type === 'Device');
     const transactions = data.nodes.filter(n => n.type === 'Transaction').slice(0, maxTrans);
     
     const transactionIds = new Set(transactions.map(t => t.id));
@@ -117,6 +116,7 @@ const Network = () => {
     
     customers.forEach(c => connectedNodeIds.add(c.id));
     accounts.forEach(a => connectedNodeIds.add(a.id));
+    devices.forEach(d => connectedNodeIds.add(d.id));
     
     const finalNodes = data.nodes.filter(n => connectedNodeIds.has(n.id));
     
@@ -245,7 +245,6 @@ const Network = () => {
 
     const visNodeIds = new Set(visNodes.map(n => n.id));
     
-    // Generate truly unique edge IDs
     let edgeCounter = 0;
     const visEdges = edgesToShow
       .filter(edge => visNodeIds.has(edge.source) && visNodeIds.has(edge.target))
@@ -260,6 +259,7 @@ const Network = () => {
         if (edge.relationship === 'MADE') color = '#a78bfa';
         if (edge.relationship === 'OWNS') color = '#60a5fa';
         if (edge.relationship === 'USED' || edge.relationship === 'USES_DEVICE') color = '#f97316';
+        if (edge.relationship === 'CONNECTED_FROM') color = '#06b6d4';
         if (edge.relationship === 'FROM_IP') color = '#06b6d4';
         if (edge.relationship === 'OCCURRED_AT') color = '#ec489a';
         
@@ -403,6 +403,7 @@ const Network = () => {
               <button className={`filter-btn ${filter === 'Customer' ? 'active' : ''}`} onClick={() => setFilter('Customer')}>CUSTOMERS</button>
               <button className={`filter-btn ${filter === 'Account' ? 'active' : ''}`} onClick={() => setFilter('Account')}>ACCOUNTS</button>
               <button className={`filter-btn ${filter === 'Transaction' ? 'active' : ''}`} onClick={() => setFilter('Transaction')}>TRANSACTIONS</button>
+              <button className={`filter-btn ${filter === 'Device' ? 'active' : ''}`} onClick={() => setFilter('Device')}>DEVICES</button>
               <button className={`filter-btn ${filter === 'SUSPICIOUS' ? 'active' : ''}`} onClick={() => setFilter('SUSPICIOUS')}>SUSPICIOUS ONLY</button>
             </div>
             <button className="filter-btn" onClick={handleRefresh} style={{ marginLeft: 'auto' }}>REFRESH</button>
@@ -426,6 +427,8 @@ const Network = () => {
             <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#10b981' }}></div><span>Account (Normal)</span></div>
             <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#a78bfa' }}></div><span>Transaction</span></div>
             <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#f59e0b' }}></div><span>Money Transfer</span></div>
+            <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#f97316' }}></div><span>Device</span></div>
+            <div className="legend-item"><div className="legend-color" style={{ backgroundColor: '#06b6d4' }}></div><span>IP Address</span></div>
           </div>
         </div>
 

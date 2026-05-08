@@ -22,6 +22,11 @@ const Dashboard = () => {
     medium: 0,
     low: 0
   });
+  const [recentDevices, setRecentDevices] = useState([]);
+  const [deviceStats, setDeviceStats] = useState({
+    totalDevices: 0,
+    uniqueDevices: 0
+  });
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
@@ -30,19 +35,26 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const [statsRes, alertsRes, riskRes] = await Promise.all([
+      const [statsRes, alertsRes, riskRes, devicesRes] = await Promise.all([
         axios.get('http://localhost:5000/api/dashboard/stats', { withCredentials: true }),
         axios.get('http://localhost:5000/api/dashboard/high-risk-alerts', { withCredentials: true }),
-        axios.get('http://localhost:5000/api/dashboard/risk-distribution', { withCredentials: true })
+        axios.get('http://localhost:5000/api/dashboard/risk-distribution', { withCredentials: true }),
+        axios.get('http://localhost:5000/api/customer/devices', { withCredentials: true })
       ]);
 
       console.log('Dashboard Stats:', statsRes.data);
       console.log('High Risk Alerts:', alertsRes.data);
       console.log('Risk Distribution:', riskRes.data);
+      console.log('Devices:', devicesRes.data);
 
       setStats(statsRes.data);
       setHighRiskAlerts(alertsRes.data);
       setRiskDistribution(riskRes.data);
+      setRecentDevices(devicesRes.data.slice(0, 5));
+      setDeviceStats({
+        totalDevices: devicesRes.data.length,
+        uniqueDevices: new Set(devicesRes.data.map(d => d.deviceName)).size
+      });
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       if (error.response?.status === 401) {
@@ -215,9 +227,9 @@ const Dashboard = () => {
             <div className="stat-danger">High-risk customers</div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">GEO-IP CONTEXT</div>
-            <div className="stat-value">ACTIVE</div>
-            <div className="stat-trend">Monitoring active</div>
+            <div className="stat-label">REGISTERED DEVICES</div>
+            <div className="stat-value">{deviceStats.totalDevices}</div>
+            <div className="stat-trend">{deviceStats.uniqueDevices} unique device types</div>
           </div>
         </div>
 
@@ -271,6 +283,41 @@ const Dashboard = () => {
               <div className="risk-total">
                 <span>Total Customers: {stats.totalCustomers}</span>
                 <span>Mean Risk Score: {stats.avgRiskScore}</span>
+              </div>
+            </div>
+
+            {/* Recent Devices Section */}
+            <div className="card" style={{ marginTop: '20px' }}>
+              <div className="card-header">
+                <h3 className="card-title">RECENT DEVICES</h3>
+              </div>
+              <div className="alerts-table">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Device Name</th>
+                      <th>Platform</th>
+                      <th>First Seen</th>
+                      <th>Last Seen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentDevices.length > 0 ? (
+                      recentDevices.map((device, idx) => (
+                        <tr key={idx}>
+                          <td>{device.deviceName || 'Unknown Device'}</td>
+                          <td>{device.platform || 'Unknown'}</td>
+                          <td>{device.firstSeen ? new Date(device.firstSeen).toLocaleString() : 'N/A'}</td>
+                          <td>{device.lastSeen ? new Date(device.lastSeen).toLocaleString() : 'N/A'}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="4" className="no-data">No devices registered yet. Login from different browsers to see devices.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

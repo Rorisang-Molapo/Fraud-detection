@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { getRealDeviceInfo, registerDevice } from './utils/deviceUtils';
 import './App.css';
 
 const CustomerDashboard = () => {
@@ -18,10 +19,33 @@ const CustomerDashboard = () => {
     const [transferStatus, setTransferStatus] = useState(null);
     const [searchResults, setSearchResults] = useState([]);
     const [showSearch, setShowSearch] = useState(false);
+    const [deviceInfo, setDeviceInfo] = useState(null);
+    const [devices, setDevices] = useState([]);
+    const [showDevices, setShowDevices] = useState(false);
 
     useEffect(() => {
+        initDeviceTracking();
         fetchData();
+        fetchDevices();
     }, []);
+
+    const initDeviceTracking = async () => {
+        const result = await registerDevice();
+        if (result.success) {
+            setDeviceInfo(result.deviceInfo);
+        }
+    };
+
+    const fetchDevices = async () => {
+        try {
+            const response = await axios.get('http://localhost:5000/api/customer/devices', {
+                withCredentials: true
+            });
+            setDevices(response.data);
+        } catch (error) {
+            console.error('Error fetching devices:', error);
+        }
+    };
 
     const fetchData = async () => {
         try {
@@ -91,21 +115,17 @@ const CustomerDashboard = () => {
         const toAcc = parseInt(transferForm.toAccount);
         const amountNum = parseFloat(transferForm.amount);
         
-        console.log('Transfer details:', {
-            fromAccountNumber: fromAcc,
-            toAccountNumber: toAcc,
-            amount: amountNum,
-            reference: transferForm.reference || 'Online transfer'
-        });
-        
         setTransferStatus({ type: 'info', message: 'Processing transfer...' });
+        
+        const currentDeviceInfo = getRealDeviceInfo();
         
         try {
             const response = await axios.post('http://localhost:5000/api/customer/transfer', {
                 fromAccountNumber: fromAcc,
                 toAccountNumber: toAcc,
                 amount: amountNum,
-                reference: transferForm.reference || 'Online transfer'
+                reference: transferForm.reference || 'Online transfer',
+                deviceId: currentDeviceInfo.deviceId
             }, { withCredentials: true });
             
             console.log('Transfer response:', response.data);
@@ -115,10 +135,7 @@ const CustomerDashboard = () => {
                 setTransferStatus({ type: 'warning', message: response.data.message + ' - This transaction has been flagged for review.' });
             }
             
-            // Clear form
             setTransferForm(prev => ({ ...prev, toAccount: '', amount: '', reference: '' }));
-            
-            // Refresh data to show updated balances
             await fetchData();
             
             setTimeout(() => setTransferStatus(null), 5000);
@@ -168,7 +185,6 @@ const CustomerDashboard = () => {
 
     return (
         <div className="customer-app">
-            {/* Header */}
             <div className="customer-header">
                 <div className="logo">
                     <h1>FEDERAL 20!</h1>
@@ -180,9 +196,7 @@ const CustomerDashboard = () => {
                 </div>
             </div>
 
-            {/* Main */}
             <div className="customer-main">
-                {/* Sidebar */}
                 <div className="sidebar">
                     <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
                         Overview
@@ -196,11 +210,12 @@ const CustomerDashboard = () => {
                     <button className={activeTab === 'accounts' ? 'active' : ''} onClick={() => setActiveTab('accounts')}>
                         Accounts
                     </button>
+                    <button className={activeTab === 'devices' ? 'active' : ''} onClick={() => setActiveTab('devices')}>
+                        Devices
+                    </button>
                 </div>
 
-                {/* Content */}
                 <div className="content">
-                    {/* Overview Tab */}
                     {activeTab === 'overview' && (
                         <div>
                             <div className="welcome-card">
@@ -214,7 +229,17 @@ const CustomerDashboard = () => {
                                 </div>
                             </div>
 
-                            {/* Balance Cards */}
+                            {deviceInfo && (
+                                <div className="device-info-card" style={{ marginTop: '20px', padding: '15px', backgroundColor: '#1e293b', borderRadius: '8px' }}>
+                                    <h4 style={{ marginBottom: '10px', color: '#60a5fa' }}>Current Device</h4>
+                                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                                        <div>Device: {deviceInfo.platform}</div>
+                                        <div>Screen: {deviceInfo.screenResolution}</div>
+                                        <div>Timezone: {deviceInfo.timezone}</div>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="balance-cards">
                                 {data.accounts?.map((acc, idx) => (
                                     <div key={idx} className="balance-card">
@@ -228,13 +253,11 @@ const CustomerDashboard = () => {
                                 ))}
                             </div>
 
-                            {/* Total Balance */}
                             <div className="total-balance">
                                 <h3>Total Balance</h3>
                                 <div className="total-amount">${data.totalBalance?.toLocaleString()}</div>
                             </div>
 
-                            {/* Recent Activity */}
                             <div className="recent-activity">
                                 <h3>Recent Activity</h3>
                                 {data.recentTransactions && data.recentTransactions.length > 0 ? (
@@ -275,7 +298,6 @@ const CustomerDashboard = () => {
                         </div>
                     )}
 
-                    {/* Transfer Tab */}
                     {activeTab === 'transfer' && (
                         <div className="transfer-card">
                             <h2>Send Money</h2>
@@ -354,7 +376,6 @@ const CustomerDashboard = () => {
                         </div>
                     )}
 
-                    {/* Transactions Tab */}
                     {activeTab === 'transactions' && (
                         <div className="transactions-card">
                             <h2>Transaction History</h2>
@@ -387,7 +408,6 @@ const CustomerDashboard = () => {
                         </div>
                     )}
 
-                    {/* Accounts Tab */}
                     {activeTab === 'accounts' && (
                         <div className="accounts-card">
                             <h2>Your Accounts</h2>
@@ -407,6 +427,35 @@ const CustomerDashboard = () => {
                                     )}
                                 </div>
                             ))}
+                        </div>
+                    )}
+
+                    {activeTab === 'devices' && (
+                        <div className="devices-card">
+                            <h2>Your Devices</h2>
+                            {devices.length === 0 ? (
+                                <div className="no-data">No devices registered yet</div>
+                            ) : (
+                                devices.map((device, idx) => (
+                                    <div key={idx} className="device-detail" style={{ marginBottom: '15px', padding: '15px', backgroundColor: '#1e293b', borderRadius: '8px' }}>
+                                        <div className="device-header">
+                                            <h3 style={{ color: '#60a5fa', marginBottom: '10px' }}>{device.deviceName || 'Unknown Device'}</h3>
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                                            <div>Platform: {device.platform}</div>
+                                            <div>First Seen: {formatDate(device.firstSeen)}</div>
+                                            <div>Last Seen: {formatDate(device.lastSeen)}</div>
+                                            <div>Usage Count: {device.usageCount} times</div>
+                                            {device.ipAddresses && device.ipAddresses.length > 0 && (
+                                                <div>IP Addresses: {device.ipAddresses.join(', ')}</div>
+                                            )}
+                                            {device.cities && device.cities.length > 0 && (
+                                                <div>Locations: {device.cities.join(', ')}</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     )}
                 </div>

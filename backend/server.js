@@ -44,7 +44,7 @@ const requireAuth = (req, res, next) => {
 
 
 app.post('/api/login', async (req, res) => {
-    const { username, password } = req.body;
+    const { username, password, deviceId, deviceInfo, networkInfo } = req.body;
     const neo4jSession = driver.session();
     try {
         const adminResult = await neo4jSession.run(
@@ -76,6 +76,31 @@ app.post('/api/login', async (req, res) => {
                 customerId: toNativeNumber(customerResult.records[0].get('customerId')),
                 loggedIn: true
             };
+            
+            // Record device usage on login (matching your schema)
+            if (deviceId) {
+                await neo4jSession.run(`
+                    MATCH (c:Customer {username: $username})
+                    MERGE (d:Device {deviceId: $deviceId})
+                    SET d.type = $deviceType,
+                        d.os = $platform,
+                        d.lastSeen = datetime(),
+                        d.isTrusted = false,
+                        d.firstSeen = CASE WHEN d.firstSeen IS NULL THEN datetime() ELSE d.firstSeen END
+                    WITH c, d
+                    MERGE (c)-[:USES_DEVICE {firstSeen: datetime()}]->(d)
+                    SET d.lastSeen = datetime()
+                `, {
+                    username: username,
+                    deviceId: deviceId,
+                    deviceType: deviceInfo?.platform?.includes('Win') ? 'Windows Laptop' :
+                                deviceInfo?.platform?.includes('Mac') ? 'MacBook Pro' :
+                                deviceInfo?.platform?.includes('iPhone') ? 'iPhone' :
+                                deviceInfo?.platform?.includes('Android') ? 'Android Device' : 'Unknown Device',
+                    platform: deviceInfo?.platform || 'Unknown'
+                });
+            }
+            
             return res.json({ success: true, role: 'customer', redirect: '/customer-dashboard' });
         }
         
@@ -944,6 +969,153 @@ app.get('/api/customer/search-account', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Search error:', error);
         res.status(500).json({ error: 'Search failed' });
+    } finally {
+        await session.close();
+    }
+});
+
+
+// DEVICE TRACKING ENDPOINTS (UPDATED TO MATCH YOUR SCHEMA)
+
+app.post('/api/device/register', requireAuth, async (req, res) => {
+    const session = driver.session();
+    const username = req.session.user.username;
+    const { deviceInfo, networkInfo } = req.body;
+    
+    try {
+        const deviceId = deviceInfo.deviceId;
+        
+        // Get customer info first
+        const customerResult = await session.run(`
+            MATCH (c:Customer {username: $username})
+            RETURN c.id AS customerId
+        `, { username });
+        
+        if (customerResult.records.length === 0) {
+            return res.status(404).json({ error: 'Customer not found' });
+        }
+        
+        const customerId = customerResult.records[0].get('customerId').toNumber();
+        
+        // Create or update device node matching your schema
+        await session.run(`
+            MERGE (d:Device {deviceId: $deviceId})
+            SET d.type = $deviceType,
+                d.os = $platform,
+                d.lastSeen = datetime(),
+                d.isTrusted = false,
+                d.firstSeen = CASE WHEN d.firstSeen IS NULL THEN datetime() ELSE d.firstSeen END
+        `, {
+            deviceId: deviceId,
+            deviceType: deviceInfo.platform?.includes('Win') ? 'Windows Laptop' :
+                        deviceInfo.platform?.includes('Mac') ? 'MacBook Pro' :
+                        deviceInfo.platform?.includes('iPhone') ? 'iPhone' :
+                        deviceInfo.platform?.includes('Android') ? 'Android Device' : 'Unknown Device',
+            platform: deviceInfo.platform || 'Unknown'
+        });
+        
+        // Create USES_DEVICE relationship (matching your original schema)
+        await session.run(`
+            MATCH (c:Customer {id: $customerId})
+            MATCH (d:Device {deviceId: $deviceId})
+            MERGE (c)-[:USES_DEVICE {firstSeen: datetime()}]->(d)
+            SET d.lastSeen = datetime()
+        `, { customerId: customerId, deviceId: deviceId });
+        
+        // Handle IP address if available
+        if (networkInfo && networkInfo.ipAddress) {
+            await session.run(`
+                MERGE (ip:IPAddress {address: $ipAddress})
+                SET ip.country = $country,
+                    ip.isVPN = false,
+                    ip.isProxy = false,
+                    ip.riskLevel = 'low'
+                WITH ip
+                MATCH (d:Device {deviceId: $deviceId})
+                MERGE (d)-[:CONNECTED_FROM]->(ip)
+            `, {
+                ipAddress: networkInfo.ipAddress,
+                country: networkInfo.country || 'Unknown',
+                deviceId: deviceId
+            });
+        }
+        
+        res.json({ success: true, message: 'Device registered successfully' });
+    } catch (error) {
+        console.error('Device registration error:', error);
+        res.status(500).json({ error: 'Failed to register device' });
+    } finally {
+        await session.close();
+    }
+});
+
+app.get('/api/customer/devices', requireAuth, async (req, res) => {
+    const session = driver.session();
+    const username = req.session.user.username;
+    
+    try {
+        const result = await session.run(`
+            MATCH (c:Customer {username: $username})-[:USES_DEVICE]->(d:Device)
+            OPTIONAL MATCH (d)-[:CONNECTED_FROM]->(ip:IPAddress)
+            RETURN d.deviceId AS deviceId,
+                   d.type AS deviceName,
+                   d.os AS platform,
+                   d.firstSeen AS firstSeen,
+                   d.lastSeen AS lastSeen,
+                   d.isTrusted AS isTrusted,
+                   COLLECT(DISTINCT ip.address) AS ipAddresses,
+                   COLLECT(DISTINCT ip.country) AS countries
+            ORDER BY d.lastSeen DESC
+        `, { username });
+        
+        const devices = result.records.map(record => ({
+            deviceId: record.get('deviceId'),
+            deviceName: record.get('deviceName') || 'Unknown Device',
+            platform: record.get('platform') || 'Unknown',
+            firstSeen: record.get('firstSeen') ? record.get('firstSeen').toString() : null,
+            lastSeen: record.get('lastSeen') ? record.get('lastSeen').toString() : null,
+            isTrusted: record.get('isTrusted') || false,
+            ipAddresses: record.get('ipAddresses'),
+            countries: record.get('countries')
+        }));
+        
+        res.json(devices);
+    } catch (error) {
+        console.error('Error fetching devices:', error);
+        res.status(500).json({ error: 'Failed to fetch devices' });
+    } finally {
+        await session.close();
+    }
+});
+
+app.get('/api/security/device-alerts', requireAuth, async (req, res) => {
+    const session = driver.session();
+    const username = req.session.user.username;
+    
+    try {
+        const result = await session.run(`
+            MATCH (c:Customer {username: $username})-[:USES_DEVICE]->(d:Device)
+            WITH c, COUNT(d) AS deviceCount, COLLECT(d.type) AS deviceNames
+            WHERE deviceCount > 1
+            RETURN deviceCount, deviceNames
+        `, { username });
+        
+        const alerts = [];
+        if (result.records.length > 0) {
+            const record = result.records[0];
+            alerts.push({
+                type: 'MULTIPLE_DEVICES',
+                severity: 'MEDIUM',
+                message: `Account accessed from ${record.get('deviceCount')} different devices`,
+                devices: record.get('deviceNames'),
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        res.json(alerts);
+    } catch (error) {
+        console.error('Device alerts error:', error);
+        res.json([]);
     } finally {
         await session.close();
     }
