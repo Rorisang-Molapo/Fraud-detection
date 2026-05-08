@@ -3128,3 +3128,19 @@
         padding: 10px;
     }
 }
+
+.activity-amount.amount-positive {
+    color: #10b981;
+}
+
+.activity-amount.amount-negative {
+    color: #ef4444;
+}
+
+.transaction-amount.amount-positive {
+    color: #10b981;
+}
+
+.transaction-amount.amount-negative {
+    color: #ef4444;
+}
