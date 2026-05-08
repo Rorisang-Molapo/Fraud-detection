@@ -39,9 +39,9 @@ const requireAuth = (req, res, next) => {
     }
 };
 
-// ===========================================
+
 // AUTHENTICATION ENDPOINTS
-// ===========================================
+
 
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
@@ -101,9 +101,7 @@ app.post('/api/logout', (req, res) => {
     res.json({ success: true });
 });
 
-// ===========================================
 // DASHBOARD ENDPOINTS
-// ===========================================
 
 app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -184,9 +182,8 @@ app.get('/api/dashboard/risk-distribution', requireAuth, async (req, res) => {
     }
 });
 
-// ===========================================
+
 // CUSTOMER MANAGEMENT
-// ===========================================
 
 app.get('/api/customers', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -296,9 +293,8 @@ app.get('/api/customers/:id', requireAuth, async (req, res) => {
     }
 });
 
-// ===========================================
+
 // FRAUD ALERTS
-// ===========================================
 
 app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -348,7 +344,6 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
                    [node IN nodes(path) | node.accountNumber] AS path,
                    REDUCE(s = 0, r IN relationships(path) | s + r.amount) AS totalAmount LIMIT 5
         `);
-        // FIX: make each alert ID unique to avoid React duplicate key warnings
         pathResult.records.forEach((record, idx) => {
             const uniqueId = `LAUNDERING_PATH_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 8)}`;
             alerts.push({
@@ -373,9 +368,8 @@ app.get('/api/fraud-alerts', requireAuth, async (req, res) => {
     }
 });
 
-// ===========================================
+
 // NETWORK VISUALIZATION
-// ===========================================
 
 app.get('/api/network/data', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -438,9 +432,8 @@ app.get('/api/network/data', requireAuth, async (req, res) => {
     }
 });
 
-// ===========================================
+
 // REPORT ENDPOINTS
-// ===========================================
 
 app.get('/api/transactions/flagged', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -706,9 +699,8 @@ app.get('/api/transfers', requireAuth, async (req, res) => {
     }
 });
 
-// ===========================================
+
 // CUSTOMER BANKING ENDPOINTS
-// ===========================================
 
 app.get('/api/customer/dashboard', requireAuth, async (req, res) => {
     const session = driver.session();
@@ -875,6 +867,16 @@ app.post('/api/customer/transfer', requireAuth, async (req, res) => {
                 })
                 CREATE (from)-[:MADE]->(t)
             `, { fromAccount: fromAccountNumber, amount, transactionId, isFlagged });
+            
+            // Update customer's risk score for flagged transaction
+            if (isFlagged) {
+                await tx.run(`
+                    MATCH (c:Customer)-[:OWNS]->(a:Account {accountNumber: $fromAccount})
+                    SET c.riskScore = c.riskScore + 15
+                    SET c.riskScore = CASE WHEN c.riskScore > 100 THEN 100 ELSE c.riskScore END
+                `, { fromAccount: fromAccountNumber });
+            }
+            
             await tx.commit();
             const verifyResult = await session.run(`
                 MATCH (a:Account {accountNumber: $fromAccount})
