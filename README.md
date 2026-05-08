@@ -1,5 +1,7 @@
 # Fraud Detection System
 
+[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&duration=5075&pause=1031&color=DA0000&width=435&lines=Fraud+Detection+System;using+Neo4j)](https://git.io/typing-svg)
+
 > A simple fraud detection system built using React and Neo4j graph database
 
 **Developers:** Isaac xv¡ & just_ranks xv¡ & Matlali xv¡ & BlackBeard1-0-1 xv¡ & Tshetshe xv¡ & Zulu xv¡ <br/>
