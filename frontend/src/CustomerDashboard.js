@@ -218,7 +218,6 @@ const CustomerDashboard = () => {
                             <div className="balance-cards">
                                 {data.accounts?.map((acc, idx) => (
                                     <div key={idx} className="balance-card">
-                                        <div className="card-icon">💰</div>
                                         <div className="card-info">
                                             <div className="card-type">{acc.type?.toUpperCase()} Account</div>
                                             <div className="card-number">{formatAccountNumber(acc.accountNumber)}</div>
@@ -241,7 +240,6 @@ const CustomerDashboard = () => {
                                 {data.recentTransactions && data.recentTransactions.length > 0 ? (
                                     data.recentTransactions.slice(0, 5).map((tx, idx) => (
                                         <div key={idx} className="activity-item">
-                                            <div className="activity-icon">{tx.type === 'transfer' ? '💸' : '🛒'}</div>
                                             <div className="activity-details">
                                                 <div className="activity-title">
                                                     {tx.type === 'transfer' ? 'Money Transfer' : 'Purchase'}
@@ -336,10 +334,6 @@ const CustomerDashboard = () => {
                                 
                                 <button type="submit" className="transfer-button">Send Money</button>
                             </form>
-                            
-                            <div className="warning-note">
-                                Transfers over $10,000 will be flagged for security review.
-                            </div>
                         </div>
                     )}
 
@@ -359,7 +353,7 @@ const CustomerDashboard = () => {
                                                     {tx.isFlagged && <span className="flagged-badge-small">Flagged</span>}
                                                 </div>
                                                 <div className="transaction-date">{formatDate(tx.timestamp)}</div>
-                                                {tx.location && <div className="transaction-location">📍 {tx.location}</div>}
+                                                {tx.location && <div className="transaction-location">Location: {tx.location}</div>}
                                             </div>
                                             <div className="transaction-amount">${tx.amount?.toLocaleString()}</div>
                                         </div>
@@ -387,7 +381,7 @@ const CustomerDashboard = () => {
                                     <div className="account-number">Account Number: {acc.accountNumber}</div>
                                     <div className="account-balance">Balance: ${acc.balance?.toLocaleString()}</div>
                                     {acc.isFlagged && (
-                                        <div className="account-warning">⚠️ This account has been flagged for review</div>
+                                        <div className="account-warning">This account has been flagged for review</div>
                                     )}
                                 </div>
                             ))}
