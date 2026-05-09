@@ -1,7 +1,7 @@
 # Security Policy – Fraud Detection & Risk Monitoring System
 
 ## Overview
-This document outlines the security practices, threat considerations, and protection mechanisms implemented in the Fraud Detection and Risk Monitoring System developed for Datamak Technologies.
+This document outlines the security practices, threat considerations, and protection mechanisms implemented in the Fraud Detection and Risk Monitoring System.
 
 The system stores and analyses sensitive financial and behavioural data using a Neo4j graph database. Because the application deals with transactions, accounts, devices and locations, protecting confidentiality, integrity and availability is critical.
 
