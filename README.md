@@ -72,6 +72,7 @@ NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=yourpassword
 ```
+### Step 6: start your application.
 
 ## References
 1. A. A. Rahman et al., "A systematic review of fraud: an overview of state-owned enterprises," Cogent Business &amp; Management, vol. 12, no. 1, p. 2518493, 2025.
@@ -99,6 +100,5 @@ NEO4J_PASSWORD=yourpassword
 12. M. A. Khan et al., "ENHANCING FINANCIAL FRAUD DETECTION BY LEVERAGING NEO4J AND LLAMA2," SSRN, Dec. 2025.
 
 13. J. Doe et al., "Fraud risk management and organizational resilience," WJARR, 2025.
-## start your application.
 
 ##  FEDERAL 20! TO THE WORLD © 2026
