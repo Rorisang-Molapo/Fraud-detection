@@ -40,6 +40,7 @@ https://github.com/user-attachments/assets/14524d66-6412-4e8b-b2fc-57fa86a32894
 ## CodeQL Status
 [![CodeQL Advanced](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml/badge.svg)](https://github.com/Rorisang-Molapo/Fraud-detection/actions/workflows/codeql.yml)
 
+---
 ## Installation guide document to provide user on how to use the system through installation of dependencies.
 
 ### Step 1: Clone the Repository
