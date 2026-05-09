@@ -1,6 +1,6 @@
 # Contributing Guidelines – Fraud Detection & Risk Monitoring System
 
-Thank you for contributing to the Fraud Detection & Risk Monitoring System developed for Datamak Technologies.
+Thank you for contributing to the Fraud Detection & Risk Monitoring System.
 
 This document outlines how team members should contribute to ensure consistency, security, and maintainability of the project.
 
