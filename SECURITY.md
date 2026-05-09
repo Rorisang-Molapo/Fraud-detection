@@ -70,7 +70,6 @@ Security measures:
 | Role | Permissions |
 |------|-------------|
 | Admin | Full system access |
-| Analyst | View transactions & risk reports |
 | User | Limited dashboard access |
 
 The principle of **least privilege** is enforced.
