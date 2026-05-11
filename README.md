@@ -43,7 +43,7 @@ https://github.com/user-attachments/assets/14524d66-6412-4e8b-b2fc-57fa86a32894
 ---
 ## Installation guide document to provide user on how to use the system through installation of dependencies.
 
-### Step 1: Clone the Repository
+## Step 1: Clone the Repository
 
 git clone https://github.com/yourusername/Fraud-detection-system.git <br/>
 cd Fraud-detection-system
